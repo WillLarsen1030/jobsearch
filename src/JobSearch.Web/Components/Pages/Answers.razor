@@ -1,0 +1,40 @@
+@page "/answers"
+@inject IApplicationRepository Repository
+
+<PageTitle>Answer Bank | JobSearch</PageTitle>
+<header class="page-header"><div><p class="eyebrow">APPROVED FACTS</p><h1>Application answer bank</h1><p class="page-subtitle">Reusable answers are deterministic and never inferred from an unanswered legal or sensitive question.</p></div></header>
+
+<section class="form-section answer-editor">
+    <div class="section-heading"><h2>Add approved answer</h2><span>Matching threshold: 85%</span></div>
+    <div class="form-grid">
+        <label class="wide-field">Question or representative wording<InputText @bind-Value="pattern" /></label>
+        <label class="wide-field">Approved answer<InputTextArea rows="3" @bind-Value="answer" /></label>
+        <label>Answer type<InputSelect @bind-Value="answerType">@foreach (var type in Enum.GetValues<AnswerType>()) { <option value="@type">@type</option> }</InputSelect></label>
+        <label>Confidence<InputNumber min="0" max="1" step="0.05" @bind-Value="confidence" /></label>
+        <label class="checkbox-field"><InputCheckbox @bind-Value="alwaysConfirm" /> Always require human confirmation</label>
+        <label class="wide-field">Notes<InputText @bind-Value="notes" /></label>
+    </div>
+    <button class="btn-primary-action" @onclick="SaveAsync" disabled="@(string.IsNullOrWhiteSpace(pattern) || string.IsNullOrWhiteSpace(answer))">Save approved answer</button>
+</section>
+
+<section class="application-list-section">
+    <div class="section-heading"><h2>Saved answers</h2><span>@answers.Count total</span></div>
+    @if (answers.Count == 0) { <div class="empty-state"><strong>No approved answers yet.</strong><span>Add only answers you have personally confirmed.</span></div> }
+    else
+    {
+        <div class="answer-list">@foreach (var item in answers) {
+            <article><div><strong>@item.Pattern</strong><span>@item.AnswerType · @item.Confidence.ToString("P0") confidence@(item.AlwaysRequireConfirmation ? " · confirmation required" : "")</span></div><p>@item.Answer</p><button class="icon-button" title="Delete answer" @onclick="() => DeleteAsync(item.Id)">&#10005;</button></article>
+        }</div>
+    }
+</section>
+
+@code {
+    private IReadOnlyList<ApplicationAnswer> answers = [];
+    private string pattern = string.Empty, answer = string.Empty, notes = string.Empty;
+    private AnswerType answerType = AnswerType.Text;
+    private decimal confidence = 1m;
+    private bool alwaysConfirm;
+    protected override async Task OnInitializedAsync() => answers = await Repository.GetAnswersAsync();
+    private async Task SaveAsync() { await Repository.SaveAnswerAsync(new(Guid.NewGuid(), pattern, QuestionMatcher.Normalize(pattern), answer, answerType, confidence, alwaysConfirm, notes, DateTimeOffset.UtcNow)); pattern = answer = notes = string.Empty; confidence = 1m; alwaysConfirm = false; answers = await Repository.GetAnswersAsync(); }
+    private async Task DeleteAsync(Guid id) { await Repository.DeleteAnswerAsync(id); answers = await Repository.GetAnswersAsync(); }
+}

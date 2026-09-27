@@ -1,0 +1,255 @@
+@page "/jobs/{Id:guid}"
+@inject IJobRepository Repository
+@inject NavigationManager Navigation
+@inject ApplicationService ApplicationService
+@inject IApplicationRepository ApplicationRepository
+
+<PageTitle>@(job is null ? "Job" : $"{job.Posting.Title} | JobSearch")</PageTitle>
+
+@if (isLoading)
+{
+    <div class="empty-state">Loading job...</div>
+}
+else if (job is null)
+{
+    <div class="empty-state"><strong>Job not found.</strong><a href="/">Return to the review queue</a></div>
+}
+else
+{
+    <a class="back-link" href="/"><span aria-hidden="true">&#8592;</span> Review queue</a>
+
+    <header class="detail-header">
+        <div class="score-block detail-score @(job.Score >= 75 ? "score-strong" : job.Score >= 50 ? "score-medium" : "score-low")">
+            <strong>@job.Score</strong><span>MATCH</span>
+        </div>
+        <div class="detail-title">
+            <p class="eyebrow">@job.Posting.Company</p>
+            <h1>@job.Posting.Title</h1>
+            <div class="metadata">
+                <span>@job.Posting.WorkLocationType · @ValueOrUnknown(job.Posting.Location)</span>
+                <span>@job.Posting.EmploymentType</span>
+                <span>@FormatCompensation(job)</span>
+            </div>
+        </div>
+        <a class="btn-primary-action" href="@job.Posting.Url" target="_blank" rel="noopener noreferrer">
+            Open posting <span aria-hidden="true">&#8599;</span>
+        </a>
+    </header>
+
+    @if (!string.IsNullOrWhiteSpace(saveMessage))
+    {
+        <div class="fetch-result fetch-success" role="status">@saveMessage</div>
+    }
+
+    <div class="detail-layout">
+        <main class="detail-main">
+            <section class="detail-section">
+                <div class="section-heading"><h2>Match analysis</h2><span>Deterministic score: @job.Score / 100</span></div>
+                <div class="eligibility-summary @(job.EligibilityAssessment.IsEligible ? "eligible" : "ineligible")">
+                    <strong>@(job.EligibilityAssessment.IsEligible ? "Eligible for review" : "Eligibility problems detected")</strong>
+                    @foreach (var problem in job.EligibilityAssessment.Problems)
+                    {
+                        <span>@problem</span>
+                    }
+                </div>
+                @if (job.EligibilityAssessment.Unknowns.Count > 0)
+                {
+                    <div class="unknown-list">
+                        <strong>Missing or unknown</strong>
+                        @foreach (var unknown in job.EligibilityAssessment.Unknowns)
+                        {
+                            <span>@unknown</span>
+                        }
+                    </div>
+                }
+                <div class="reason-list">
+                    @foreach (var reason in job.ScoreReasons)
+                    {
+                        <div class="reason-row">
+                            <span class="reason-points @(reason.Points >= 0 ? "positive" : "negative")">@reason.Points.ToString("+#;-#;0")</span>
+                            <div><strong>@reason.Category</strong><p>@reason.Explanation</p></div>
+                        </div>
+                    }
+                </div>
+            </section>
+
+            <section class="detail-section">
+                <div class="section-heading"><h2>Posting</h2><span>Normalized description</span></div>
+                <div class="description">@job.Posting.Description</div>
+            </section>
+
+            <section class="detail-section">
+                <div class="section-heading"><h2>Source provenance</h2><span>@job.Sources.Count source@(job.Sources.Count == 1 ? "" : "s")</span></div>
+                <div class="source-list">
+                    @foreach (var source in job.Sources)
+                    {
+                        <div class="source-row">
+                            <div><strong>@source.Source · @source.Board</strong><span>ID @source.SourceJobId</span></div>
+                            <div><span>Seen @source.FirstSeenUtc.ToLocalTime().ToString("MMM d, yyyy")</span><a href="@source.Url" target="_blank" rel="noopener noreferrer">Open source &#8599;</a></div>
+                        </div>
+                    }
+                </div>
+            </section>
+        </main>
+
+        <aside class="detail-sidebar">
+            <section class="side-panel application-panel">
+                <h2>Assisted application</h2>
+                @if (application is null)
+                {
+                    <p class="muted-copy">Prepare a private package for review before any browser filling begins.</p>
+                    <button class="btn-primary-action full-button" @onclick="PrepareApplicationAsync">Prepare Application</button>
+                }
+                else
+                {
+                    <div class="application-status status-@application.Status.ToString().ToLowerInvariant()">@application.Status</div>
+                    <p class="muted-copy">@application.Platform · @application.AutomationMode</p>
+                    <a class="btn-primary-action full-button" href="@($"/applications/{application.Id}")">Review application</a>
+                }
+            </section>
+            <section class="side-panel workflow-panel">
+                <h2>Review status</h2>
+                <label for="detail-status">Pipeline stage</label>
+                <select id="detail-status" @bind="selectedStatus">
+                    @foreach (var status in PipelineStatuses)
+                    {
+                        <option value="@status">@status</option>
+                    }
+                </select>
+                <label for="status-note">Status note <span>optional</span></label>
+                <textarea id="status-note" rows="3" placeholder="Why this changed" @bind="statusNote"></textarea>
+                <button class="btn-secondary-action" @onclick="ChangeStatusAsync" disabled="@(selectedStatus == job.Posting.Status)">Update status</button>
+            </section>
+
+            <section class="side-panel">
+                <h2>Notes</h2>
+                <textarea class="notes-field" rows="7" placeholder="Contacts, questions, follow-up context..." @bind="notes"></textarea>
+                <button class="btn-secondary-action" @onclick="SaveNotesAsync">Save notes</button>
+            </section>
+
+            <section class="side-panel facts-panel">
+                <h2>Details</h2>
+                <dl>
+                    <div><dt>Compensation</dt><dd>@FormatCompensation(job)</dd></div>
+                    <div><dt>Hours</dt><dd>@(job.Posting.EstimatedHoursPerWeek is null ? "Unknown" : $"{job.Posting.EstimatedHoursPerWeek}/week")</dd></div>
+                    <div><dt>First seen</dt><dd>@job.FirstSeenUtc.ToLocalTime().ToString("MMM d, yyyy h:mm tt")</dd></div>
+                    <div><dt>Last seen</dt><dd>@job.LastSeenUtc.ToLocalTime().ToString("MMM d, yyyy h:mm tt")</dd></div>
+                    <div><dt>Posted</dt><dd>@(job.Posting.DatePostedUtc?.ToLocalTime().ToString("MMM d, yyyy") ?? "Unknown")</dd></div>
+                    <div><dt>Clearance</dt><dd>@(job.Posting.RequiresSecurityClearance ? "Required" : "Not detected")</dd></div>
+                </dl>
+                @if (job.Posting.Skills.Count > 0)
+                {
+                    <div class="skill-list detail-skills">
+                        @foreach (var skill in job.Posting.Skills)
+                        {
+                            <span>@skill</span>
+                        }
+                    </div>
+                }
+            </section>
+
+            <section class="side-panel">
+                <h2>Status history</h2>
+                @if (job.History.Count == 0)
+                {
+                    <p class="muted-copy">No status changes yet.</p>
+                }
+                else
+                {
+                    <div class="timeline">
+                        @foreach (var change in job.History)
+                        {
+                            <div class="timeline-item">
+                                <strong>@change.OldStatus <span aria-hidden="true">&#8594;</span> @change.NewStatus</strong>
+                                <time>@change.ChangedAtUtc.ToLocalTime().ToString("MMM d, yyyy h:mm tt")</time>
+                                @if (!string.IsNullOrWhiteSpace(change.Note))
+                                {
+                                    <p>@change.Note</p>
+                                }
+                            </div>
+                        }
+                    </div>
+                }
+            </section>
+        </aside>
+    </div>
+}
+
+@code {
+    [Parameter] public Guid Id { get; set; }
+
+    private static readonly ApplicationStatus[] PipelineStatuses =
+    [
+        ApplicationStatus.Unreviewed,
+        ApplicationStatus.Interested,
+        ApplicationStatus.Apply,
+        ApplicationStatus.Applied,
+        ApplicationStatus.Interview,
+        ApplicationStatus.Offer,
+        ApplicationStatus.Rejected,
+        ApplicationStatus.Skipped,
+        ApplicationStatus.Expired
+    ];
+
+    private StoredJob? job;
+    private ApplicationStatus selectedStatus;
+    private string statusNote = string.Empty;
+    private string notes = string.Empty;
+    private string saveMessage = string.Empty;
+    private bool isLoading = true;
+    private JobApplication? application;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        job = await Repository.GetByIdAsync(Id);
+        if (job is not null)
+        {
+            selectedStatus = job.Posting.Status;
+            notes = job.Notes;
+            application = await ApplicationRepository.GetForJobAsync(Id);
+        }
+        isLoading = false;
+    }
+
+    private async Task PrepareApplicationAsync()
+    {
+        try
+        {
+            application = await ApplicationService.PrepareAsync(Id);
+            Navigation.NavigateTo($"/applications/{application.Id}");
+        }
+        catch (Exception exception)
+        {
+            saveMessage = exception.Message;
+        }
+    }
+
+    private async Task ChangeStatusAsync()
+    {
+        if (job is null || selectedStatus == job.Posting.Status) return;
+        job = await Repository.ChangeStatusAsync(job.Posting.Id, selectedStatus, statusNote, DateTimeOffset.UtcNow);
+        statusNote = string.Empty;
+        saveMessage = $"Status updated to {selectedStatus}.";
+    }
+
+    private async Task SaveNotesAsync()
+    {
+        if (job is null) return;
+        job = await Repository.UpdateNotesAsync(job.Posting.Id, notes);
+        saveMessage = "Notes saved.";
+    }
+
+    private static string ValueOrUnknown(string value) => string.IsNullOrWhiteSpace(value) ? "Location not specified" : value;
+
+    private static string FormatCompensation(StoredJob value)
+    {
+        if (!string.IsNullOrWhiteSpace(value.Posting.CompensationDescription)) return value.Posting.CompensationDescription;
+        return (value.Posting.MinimumHourlyRate, value.Posting.MaximumHourlyRate) switch
+        {
+            (null, null) => "Unknown",
+            (var minimum, null) => $"{value.Posting.Currency} {minimum:0}/hr",
+            (null, var maximum) => $"Up to {value.Posting.Currency} {maximum:0}/hr",
+            (var minimum, var maximum) => $"{value.Posting.Currency} {minimum:0}-{maximum:0}/hr"
+        };
+    }
+}

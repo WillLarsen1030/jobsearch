@@ -1,0 +1,9 @@
+# Copy to %USERPROFILE%\.cloudflared\config.yml after creating the tunnel.
+# Never commit the real tunnel UUID, hostname, or credentials path.
+tunnel: <TUNNEL-UUID>
+credentials-file: C:\Users\<WINDOWS-USER>\.cloudflared\<TUNNEL-UUID>.json
+
+ingress:
+  - hostname: <PROTECTED-HOSTNAME>
+    service: http://127.0.0.1:5088
+  - service: http_status:404

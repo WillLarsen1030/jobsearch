@@ -1,0 +1,78 @@
+# Build output
+bin/
+obj/
+artifacts/
+TestResults/
+coverage/
+*.trx
+
+# Visual Studio and VS Code user state
+.vs/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Rider / ReSharper
+.idea/
+_ReSharper*/
+*.DotSettings.user
+
+# Package and frontend output
+packages/
+node_modules/
+dist/
+
+# Local configuration, credentials, and secrets
+.env
+.env.*
+!.env.example
+appsettings.Local.json
+appsettings.*.Local.json
+secrets.json
+*.pfx
+*.p12
+
+# Local databases, applicant data, resumes, and automation output
+data/
+private/
+resumes/
+screenshots/
+browser-data/
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+*.bak
+*.backup
+*.backup.*
+exports/
+data/applicant-profile.json
+data/resumes/
+data/application-artifacts/
+data/browser-data/
+playwright-report/
+test-results/
+blob-report/
+playwright/.auth/
+*.har
+*.trace.zip
+storageState.json
+cookies.json
+
+# Cloudflare Tunnel identity and origin credentials
+.cloudflared/
+cloudflared/
+cloudflare/credentials/
+cert.pem
+*.key
+*.pem
+
+# OS files
+.DS_Store
+Thumbs.db
+Desktop.ini

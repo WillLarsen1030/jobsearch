@@ -1,0 +1,95 @@
+@page "/profile"
+@inject IApplicantProfileStore ProfileStore
+
+<PageTitle>Applicant Profile | JobSearch</PageTitle>
+
+<header class="page-header">
+    <div><p class="eyebrow">PRIVATE LOCAL DATA</p><h1>Applicant profile</h1><p class="page-subtitle">Only confirmed facts from this profile are eligible for form filling.</p></div>
+</header>
+
+@if (!string.IsNullOrWhiteSpace(message))
+{
+    <div class="fetch-result fetch-success" role="status">@message</div>
+}
+
+<div class="privacy-notice"><strong>Stored locally and ignored by Git.</strong><span>Passwords and login credentials do not belong here. Optional EEO answers remain blank unless you explicitly provide them.</span></div>
+
+<EditForm Model="profile" OnValidSubmit="SaveAsync" class="profile-form">
+    <section class="form-section">
+        <div class="section-heading"><h2>Identity and contact</h2><span>Use legal values where application forms require them</span></div>
+        <div class="form-grid">
+            <label>Preferred name<InputText @bind-Value="profile.PreferredName" /></label>
+            <label>Legal first name<InputText @bind-Value="profile.LegalFirstName" /></label>
+            <label>Legal last name<InputText @bind-Value="profile.LegalLastName" /></label>
+            <label>Email<InputText type="email" @bind-Value="profile.Email" /></label>
+            <label>Phone<InputText type="tel" @bind-Value="profile.Phone" /></label>
+            <label>City<InputText @bind-Value="profile.City" /></label>
+            <label>State<InputText @bind-Value="profile.State" /></label>
+            <label>Country<InputText @bind-Value="profile.Country" /></label>
+        </div>
+    </section>
+    <section class="form-section">
+        <div class="section-heading"><h2>Professional profile</h2><span>Factual reusable information</span></div>
+        <div class="form-grid">
+            <label>Current title<InputText @bind-Value="profile.CurrentTitle" /></label>
+            <label>Years of experience<InputNumber @bind-Value="profile.YearsOfExperience" /></label>
+            <label>LinkedIn URL<InputText @bind-Value="profile.LinkedInUrl" /></label>
+            <label>GitHub URL<InputText @bind-Value="profile.GitHubUrl" /></label>
+            <label>Portfolio URL<InputText @bind-Value="profile.PortfolioUrl" /></label>
+            <label>Remote preference<InputText @bind-Value="profile.RemotePreference" /></label>
+            <label>Work authorization<InputText @bind-Value="profile.WorkAuthorization" /></label>
+            <label>Sponsorship requirement<InputText @bind-Value="profile.SponsorshipRequirement" /></label>
+            <label class="wide-field">Compensation preference<InputText @bind-Value="profile.CompensationPreference" /></label>
+            <label class="wide-field">Technology skills<InputTextArea rows="3" @bind-Value="skills" /><span>One per line or comma-separated.</span></label>
+        </div>
+    </section>
+    <section class="form-section">
+        <div class="section-heading"><h2>Master résumé</h2><span>PDF or DOCX, stored outside source control</span></div>
+        <label class="wide-field">Absolute local file path<InputText @bind-Value="profile.ResumePath" /><span>@ResumeStatus</span></label>
+    </section>
+    <section class="form-section">
+        <div class="section-heading"><h2>History and optional answers</h2><span>Never inferred; leave anything unknown blank</span></div>
+        <div class="form-grid">
+            <label class="wide-field">Education<InputTextArea rows="3" @bind-Value="education" /><span>One per line: School | Degree | Field of study | Graduation year</span></label>
+            <label class="wide-field">Employment history<InputTextArea rows="4" @bind-Value="employment" /><span>One per line: Employer | Title | Start | End | Factual summary</span></label>
+            <label class="wide-field">Optional demographic / EEO answers<InputTextArea rows="3" @bind-Value="demographics" /><span>One per line: Question = Approved answer. Sensitive answers are never inferred.</span></label>
+        </div>
+    </section>
+    <div class="form-actions"><button class="btn-primary-action" type="submit">Save profile</button></div>
+</EditForm>
+
+@code {
+    private ApplicantProfile profile = new();
+    private string skills = string.Empty;
+    private string education = string.Empty, employment = string.Empty, demographics = string.Empty;
+    private string message = string.Empty;
+    private string ResumeStatus => string.IsNullOrWhiteSpace(profile.ResumePath) ? "No résumé selected." : File.Exists(profile.ResumePath) ? "File verified." : "File not found.";
+
+    protected override async Task OnInitializedAsync()
+    {
+        profile = await ProfileStore.GetAsync();
+        skills = string.Join(Environment.NewLine, profile.TechnologySkills);
+        education = string.Join(Environment.NewLine, profile.Education.Select(value => $"{value.School} | {value.Degree} | {value.FieldOfStudy} | {value.GraduationYear}"));
+        employment = string.Join(Environment.NewLine, profile.EmploymentHistory.Select(value => $"{value.Employer} | {value.Title} | {value.StartDate} | {value.EndDate} | {value.Summary}"));
+        demographics = string.Join(Environment.NewLine, profile.DemographicAnswers.Select(value => $"{value.Key} = {value.Value}"));
+    }
+
+    private async Task SaveAsync()
+    {
+        if (!string.IsNullOrWhiteSpace(profile.ResumePath) && !new[] { ".pdf", ".docx" }.Contains(Path.GetExtension(profile.ResumePath), StringComparer.OrdinalIgnoreCase))
+        {
+            message = "The master résumé must be a PDF or DOCX file.";
+            return;
+        }
+        profile.TechnologySkills = skills.Split([',', '\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        profile.Education = Lines(education).Select(line => line.Split('|', StringSplitOptions.TrimEntries)).Where(parts => parts.Length >= 2)
+            .Select(parts => new EducationEntry { School = parts[0], Degree = parts[1], FieldOfStudy = parts.ElementAtOrDefault(2) ?? "", GraduationYear = int.TryParse(parts.ElementAtOrDefault(3), out var year) ? year : null }).ToList();
+        profile.EmploymentHistory = Lines(employment).Select(line => line.Split('|', StringSplitOptions.TrimEntries)).Where(parts => parts.Length >= 2)
+            .Select(parts => new EmploymentEntry { Employer = parts[0], Title = parts[1], StartDate = parts.ElementAtOrDefault(2) ?? "", EndDate = parts.ElementAtOrDefault(3) ?? "", Summary = parts.ElementAtOrDefault(4) ?? "" }).ToList();
+        profile.DemographicAnswers = Lines(demographics).Select(line => line.Split('=', 2, StringSplitOptions.TrimEntries)).Where(parts => parts.Length == 2)
+            .ToDictionary(parts => parts[0], parts => parts[1], StringComparer.OrdinalIgnoreCase);
+        await ProfileStore.SaveAsync(profile);
+        message = "Applicant profile saved locally.";
+    }
+    private static IEnumerable<string> Lines(string value) => value.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+}

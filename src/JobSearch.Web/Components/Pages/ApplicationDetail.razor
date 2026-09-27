@@ -1,0 +1,58 @@
+@page "/applications/{Id:guid}"
+@inject IApplicationRepository Repository
+@inject IApplicantProfileStore ProfileStore
+@inject ApplicationService Service
+
+<PageTitle>Application Review | JobSearch</PageTitle>
+@if (application is null) { <div class="empty-state">Loading application...</div> }
+else {
+    <a class="back-link" href="/applications"><span aria-hidden="true">&#8592;</span> Application queue</a>
+    <header class="application-header"><div><p class="eyebrow">@application.Company</p><h1>@application.JobTitle</h1><div class="metadata"><span>@application.Platform</span><span>@application.AutomationMode</span><span>Created @application.CreatedAtUtc.ToLocalTime().ToString("MMM d, yyyy h:mm tt")</span></div></div><span class="application-status status-@application.Status.ToString().ToLowerInvariant()">@StatusLabel(application.Status)</span></header>
+    @if (!string.IsNullOrWhiteSpace(message)) { <div class="fetch-result @(isError ? "fetch-warning" : "fetch-success")" role="status">@message</div> }
+
+    <div class="application-review-layout">
+        <main class="detail-main">
+            @if (application.Status == ApplicationWorkflowStatus.NeedsInput) {
+                <section class="detail-section needs-input-panel"><div class="section-heading"><h2>Needs your input</h2><span>Automation stopped safely</span></div>
+                    @foreach (var question in application.Questions.Where(value => !value.IsResolved)) {
+                        <div class="question-editor"><strong>@question.Question</strong><span>@question.FieldType@(question.IsRequired ? " · required" : "")</span>@if (question.Options.Count > 0) { <p>Options: @string.Join(", ", question.Options)</p> }<input placeholder="Your approved answer" @bind="questionAnswers[question.Id]" /><label class="checkbox-field"><input type="checkbox" @bind="saveAnswers[question.Id]" /> Save this answer for similar future questions</label><button class="btn-secondary-action" @onclick="() => SaveQuestionAsync(question.Id)">Save answer</button></div>
+                    }
+                </section>
+            }
+            <section class="detail-section"><div class="section-heading"><h2>Application package</h2><span>Review before browser filling</span></div><dl class="review-facts"><div><dt>Application URL</dt><dd><a href="@application.ApplicationUrl" target="_blank" rel="noopener noreferrer">Open application &#8599;</a></dd></div><div><dt>Résumé</dt><dd>@application.ResumePath</dd></div><div><dt>Browser run</dt><dd>@ValueOrNone(application.BrowserRunId)</dd></div></dl></section>
+            <section class="detail-section"><div class="section-heading"><h2>Applicant data</h2><span>Values available to the filler</span></div><dl class="review-facts"><div><dt>Name</dt><dd>@($"{profile.LegalFirstName} {profile.LegalLastName}".Trim())</dd></div><div><dt>Email</dt><dd>@ValueOrNone(profile.Email)</dd></div><div><dt>Phone</dt><dd>@ValueOrNone(profile.Phone)</dd></div><div><dt>Location</dt><dd>@ValueOrNone(string.Join(", ", new[] { profile.City, profile.State, profile.Country }.Where(value => !string.IsNullOrWhiteSpace(value))))</dd></div><div><dt>LinkedIn</dt><dd>@ValueOrNone(profile.LinkedInUrl)</dd></div><div><dt>GitHub</dt><dd>@ValueOrNone(profile.GitHubUrl)</dd></div></dl><a href="/profile">Edit applicant profile</a></section>
+            @if (application.FieldsFilled.Count > 0 || application.Warnings.Count > 0) { <section class="detail-section"><div class="section-heading"><h2>Last automation result</h2><span>@application.FieldsFilled.Count fields filled</span></div><div class="result-columns"><div><strong>Fields filled</strong>@foreach (var field in application.FieldsFilled) { <span>@field</span> }</div><div><strong>Warnings</strong>@foreach (var warning in application.Warnings) { <span>@warning</span> }</div></div></section> }
+        </main>
+        <aside class="detail-sidebar">
+            <section class="side-panel workflow-panel"><h2>Actions</h2>
+                @if (application.Status == ApplicationWorkflowStatus.Draft) { <p class="muted-copy">Configure a valid PDF or DOCX résumé, then prepare again.</p><button class="btn-primary-action full-button" @onclick="PrepareAsync">Prepare</button> }
+                @if (application.Status == ApplicationWorkflowStatus.Prepared) { <button class="btn-primary-action full-button" @onclick="ApproveAsync">Approve package</button> }
+                @if (application.Status == ApplicationWorkflowStatus.Approved) { <button class="btn-primary-action full-button" @onclick="RunAsync">Start Filling</button> }
+                @if (application.Status == ApplicationWorkflowStatus.NeedsInput) { <button class="btn-primary-action full-button" disabled="@application.Questions.Any(value => !value.IsResolved)" @onclick="RunAsync">Resume Application</button> }
+                @if (application.Status == ApplicationWorkflowStatus.ReadyToSubmit) { <p class="ready-callout">The form is filled and waiting in the visible browser. Review it there before submitting.</p><button class="btn-primary-action full-button" @onclick="MarkSubmittedAsync">Mark Submitted</button> }
+                @if (application.Status is not ApplicationWorkflowStatus.Submitted and not ApplicationWorkflowStatus.Withdrawn) { <button class="btn-secondary-action" @onclick="WithdrawAsync">Cancel application</button> }
+            </section>
+            <section class="side-panel"><h2>Event history</h2><div class="timeline">@foreach (var item in application.Events) { <div class="timeline-item"><strong>@item.Type</strong><time>@item.OccurredAtUtc.ToLocalTime().ToString("MMM d, yyyy h:mm tt")</time><p>@item.Message</p></div> }</div></section>
+        </aside>
+    </div>
+}
+
+@code {
+    [Parameter] public Guid Id { get; set; }
+    private JobApplication? application;
+    private ApplicantProfile profile = new();
+    private readonly Dictionary<Guid, string> questionAnswers = [];
+    private readonly Dictionary<Guid, bool> saveAnswers = [];
+    private string message = string.Empty;
+    private bool isError;
+    protected override async Task OnParametersSetAsync() { application = await Repository.GetAsync(Id); profile = await ProfileStore.GetAsync(); if (application is not null) foreach (var question in application.Questions.Where(value => !value.IsResolved)) { questionAnswers.TryAdd(question.Id, string.Empty); saveAnswers.TryAdd(question.Id, false); } }
+    private async Task ExecuteAsync(Func<Task<JobApplication>> action, string success) { try { isError = false; application = await action(); message = success; } catch (Exception exception) { isError = true; message = exception.Message; application = await Repository.GetAsync(Id); } }
+    private Task PrepareAsync() => ExecuteAsync(() => Service.PrepareAsync(application!.JobPostingId), "Application package prepared.");
+    private Task ApproveAsync() => ExecuteAsync(() => Service.ApproveAsync(Id), "Application approved. Browser filling can now begin.");
+    private Task RunAsync() => ExecuteAsync(() => Service.RunAsync(Id), "Browser run completed. Review the recorded result.");
+    private Task MarkSubmittedAsync() => ExecuteAsync(() => Service.MarkSubmittedAsync(Id), "Application marked submitted.");
+    private Task WithdrawAsync() => ExecuteAsync(() => Service.WithdrawAsync(Id), "Application withdrawn.");
+    private Task SaveQuestionAsync(Guid questionId) => ExecuteAsync(() => Service.AnswerQuestionAsync(Id, questionId, questionAnswers[questionId], saveAnswers[questionId]), "Answer saved. Resolve every question before resuming.");
+    private static string StatusLabel(ApplicationWorkflowStatus value) => value switch { ApplicationWorkflowStatus.NeedsInput => "Needs Input", ApplicationWorkflowStatus.ReadyToSubmit => "Ready to Submit", _ => value.ToString() };
+    private static string ValueOrNone(string? value) => string.IsNullOrWhiteSpace(value) ? "Not provided" : value;
+}

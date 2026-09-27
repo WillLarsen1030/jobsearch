@@ -1,0 +1,19 @@
+.brand-lockup { display: flex; gap: 11px; align-items: center; padding: 25px 22px 22px; border-bottom: 1px solid rgb(255 255 255 / 10%); }
+.brand-lockup img { border-radius: 6px; }
+.brand-lockup strong, .brand-lockup span { display: block; }
+.brand-lockup strong { font-size: 1rem; letter-spacing: 0; }
+.brand-lockup span { margin-top: 1px; color: #9fb0ac; font-size: .73rem; }
+.primary-nav { padding: 18px 12px; }
+.nav-link { display: flex; align-items: center; gap: 10px; min-height: 42px; padding: 0 12px; color: #bdc9c6; border-radius: 5px; font-size: .88rem; font-weight: 600; text-decoration: none; }
+.nav-link:hover { color: white; background: rgb(255 255 255 / 7%); }
+.nav-link.active { color: white; background: #2c7567; }
+.nav-icon { width: 18px; font-size: 1rem; }
+.sidebar-note { position: absolute; inset: auto 20px 22px; color: #c4d0cd; font-size: .78rem; }
+.sidebar-note small { display: block; margin: 7px 0 0 14px; color: #82938f; line-height: 1.45; }
+.status-dot { display: inline-block; width: 7px; height: 7px; margin-right: 7px; border-radius: 50%; background: #55b89f; }
+
+@media (max-width: 800px) {
+    .brand-lockup { padding: 14px 18px; border: 0; }
+    .primary-nav { display: none; }
+    .sidebar-note { display: none; }
+}

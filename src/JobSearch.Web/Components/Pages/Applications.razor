@@ -1,0 +1,24 @@
+@page "/applications"
+@inject IApplicationRepository Repository
+
+<PageTitle>Applications | JobSearch</PageTitle>
+<header class="page-header"><div><p class="eyebrow">HUMAN-APPROVED WORKFLOW</p><h1>Applications</h1><p class="page-subtitle">Needs Input and Ready to Submit are kept at the top of the queue.</p></div></header>
+
+<div class="application-metrics">
+    @foreach (var status in QueueStatuses) { <div class="metric @(status is ApplicationWorkflowStatus.NeedsInput or ApplicationWorkflowStatus.ReadyToSubmit ? "metric-attention" : "")"><span>@StatusLabel(status)</span><strong>@items.Count(item => item.Status == status)</strong></div> }
+</div>
+
+<section class="application-list-section">
+    <div class="section-heading"><h2>Application queue</h2><span>@items.Count total</span></div>
+    @if (items.Count == 0) { <div class="empty-state"><strong>No application packages yet.</strong><span>Prepare one from a job detail page.</span></div> }
+    else { <div class="application-list">@foreach (var item in items) {
+        <a href="@($"/applications/{item.Id}")" class="application-row status-border-@item.Status.ToString().ToLowerInvariant()"><div><span class="application-status status-@item.Status.ToString().ToLowerInvariant()">@StatusLabel(item.Status)</span><strong>@item.JobTitle</strong><p>@item.Company</p></div><div><span>@item.Platform</span><span>@item.AutomationMode</span>@if (item.UnansweredQuestions > 0) { <strong>@item.UnansweredQuestions unanswered</strong> }</div></a>
+    }</div> }
+</section>
+
+@code {
+    private static readonly ApplicationWorkflowStatus[] QueueStatuses = [ApplicationWorkflowStatus.NeedsInput, ApplicationWorkflowStatus.Approved, ApplicationWorkflowStatus.InProgress, ApplicationWorkflowStatus.ReadyToSubmit, ApplicationWorkflowStatus.Submitted, ApplicationWorkflowStatus.Failed];
+    private IReadOnlyList<ApplicationSummary> items = [];
+    protected override async Task OnInitializedAsync() => items = await Repository.ListAsync();
+    private static string StatusLabel(ApplicationWorkflowStatus value) => value switch { ApplicationWorkflowStatus.NeedsInput => "Needs Input", ApplicationWorkflowStatus.ReadyToSubmit => "Ready to Submit", _ => value.ToString() };
+}

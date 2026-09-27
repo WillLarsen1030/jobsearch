@@ -1,0 +1,338 @@
+@page "/"
+@inject IJobRepository Repository
+@inject JobFetchCoordinator FetchCoordinator
+@inject JobSearchPreferences Preferences
+
+<PageTitle>Review Queue | JobSearch</PageTitle>
+
+<header class="page-header">
+    <div>
+        <p class="eyebrow">REVIEW QUEUE</p>
+        <h1>Job matches</h1>
+        <p class="page-subtitle">Focused opportunities, ranked against your working preferences.</p>
+    </div>
+    <button class="btn-fetch" @onclick="FetchJobsAsync" disabled="@isFetching">
+        <span class="button-icon" aria-hidden="true">&#8635;</span>
+        @(isFetching ? "Fetching..." : "Fetch jobs")
+    </button>
+</header>
+
+@if (fetchResult is not null)
+{
+    <section class="fetch-report" aria-label="Fetch results">
+        <div class="fetch-total">
+            <strong>@fetchResult.NewJobs new</strong>
+            <span>@fetchResult.UpdatedJobs updated · @fetchResult.Duplicates duplicates · @fetchResult.FailedSources failed · @fetchResult.SkippedSources cooling down</span>
+        </div>
+        <div class="fetch-sources">
+            @foreach (var source in fetchResult.Sources)
+            {
+                <div class="fetch-source fetch-@source.Status.ToString().ToLowerInvariant()">
+                    <strong>@source.Board</strong>
+                    <span>@source.Source · @SourceResultText(source)</span>
+                </div>
+            }
+        </div>
+    </section>
+}
+else if (!string.IsNullOrWhiteSpace(fetchMessage))
+{
+    <div class="fetch-result fetch-warning" role="status">@fetchMessage</div>
+}
+
+@if (summary is not null)
+{
+    <section class="metrics" aria-label="Job summary">
+        <div class="metric"><span>Active</span><strong>@summary.Active</strong></div>
+        <div class="metric metric-attention"><span>Unreviewed</span><strong>@summary.Unreviewed</strong></div>
+        <div class="metric metric-strong"><span>Strong + eligible</span><strong>@summary.StrongMatches</strong></div>
+        <div class="metric"><span>Interested</span><strong>@summary.Interested</strong></div>
+        <div class="metric"><span>Applied</span><strong>@summary.Applied</strong></div>
+        <div class="metric"><span>Interviews</span><strong>@summary.Interviews</strong></div>
+        <div class="metric"><span>Rejected / skipped</span><strong>@summary.RejectedOrSkipped</strong></div>
+        <div class="metric"><span>New in 24h</span><strong>@summary.AddedLast24Hours</strong></div>
+        <div class="metric"><span>New in 7d</span><strong>@summary.AddedLast7Days</strong></div>
+    </section>
+}
+
+<details class="target-summary">
+    <summary>Current search target</summary>
+    <div>
+        <span>Remote required</span>
+        <span>@string.Join(", ", Preferences.AllowedCountryCodes)</span>
+        <span>$@Preferences.MinimumHourlyRate+/hr</span>
+        <span>@Preferences.MinimumHoursPerWeek-@Preferences.MaximumHoursPerWeek hours/week</span>
+        <span>@string.Join(", ", Preferences.PreferredEmploymentTypes)</span>
+        <span>@string.Join(", ", Preferences.SearchTerms)</span>
+    </div>
+</details>
+
+<section class="review-toolbar" aria-label="Job filters">
+    <div class="filter-field filter-score">
+        <label for="minimum-score">Minimum score <strong>@minimumScore</strong></label>
+        <input id="minimum-score" type="range" min="0" max="100" step="5" @bind="minimumScore" @bind:event="onchange" @bind:after="ResetAndLoadAsync" />
+    </div>
+    <div class="filter-field">
+        <label for="status-filter">Status</label>
+        <select id="status-filter" @bind="statusFilter" @bind:after="ResetAndLoadAsync">
+            <option value="">All statuses</option>
+            @foreach (var status in Enum.GetValues<ApplicationStatus>())
+            {
+                <option value="@status">@status</option>
+            }
+        </select>
+    </div>
+    <div class="filter-field">
+        <label for="location-filter">Work mode</label>
+        <select id="location-filter" @bind="locationFilter" @bind:after="ResetAndLoadAsync">
+            <option value="">Any</option>
+            @foreach (var location in Enum.GetValues<WorkLocationType>())
+            {
+                <option value="@location">@location</option>
+            }
+        </select>
+    </div>
+    <div class="filter-field">
+        <label for="type-filter">Engagement</label>
+        <select id="type-filter" @bind="employmentFilter" @bind:after="ResetAndLoadAsync">
+            <option value="">Any</option>
+            @foreach (var type in Enum.GetValues<EmploymentType>())
+            {
+                <option value="@type">@type</option>
+            }
+        </select>
+    </div>
+    <div class="filter-field">
+        <label for="compensation-filter">Compensation</label>
+        <select id="compensation-filter" @bind="compensationFilter" @bind:after="ResetAndLoadAsync">
+            <option value="any">Any</option>
+            <option value="known">Known</option>
+            <option value="unknown">Unknown</option>
+        </select>
+    </div>
+    <div class="filter-field">
+        <label for="date-filter">Discovered</label>
+        <select id="date-filter" @bind="dateFilter" @bind:after="ResetAndLoadAsync">
+            <option value="all">Any time</option>
+            <option value="day">Last 24 hours</option>
+            <option value="week">Last 7 days</option>
+            <option value="month">Last 30 days</option>
+        </select>
+    </div>
+    <div class="filter-field filter-keyword">
+        <label for="keyword-filter">Technology or keyword</label>
+        <input id="keyword-filter" type="search" placeholder="e.g. Azure, Umbraco" @bind="keyword" @bind:event="onchange" @bind:after="ResetAndLoadAsync" />
+    </div>
+    <div class="filter-field">
+        <label for="sort-order">Sort</label>
+        <select id="sort-order" @bind="sort" @bind:after="ResetAndLoadAsync">
+            <option value="@JobSort.Score">Score</option>
+            <option value="@JobSort.Newest">Newest</option>
+            <option value="@JobSort.Compensation">Compensation</option>
+            <option value="@JobSort.Company">Company</option>
+            <option value="@JobSort.Title">Title</option>
+        </select>
+    </div>
+</section>
+
+<div class="list-heading">
+    <h2>Matches</h2>
+    <span>@(jobs?.TotalCount ?? 0) jobs · page @(jobs?.Page ?? 1) of @(jobs?.TotalPages ?? 1)</span>
+</div>
+
+@if (isLoading)
+{
+    <div class="empty-state">Loading your review queue...</div>
+}
+else if (jobs is null || jobs.Items.Count == 0)
+{
+    <div class="empty-state"><strong>No jobs match these filters.</strong><span>Adjust the review controls or fetch current listings.</span></div>
+}
+else
+{
+    <section class="job-list" aria-label="Job matches">
+        @foreach (var job in jobs.Items)
+        {
+            <article class="job-row @(job.Score >= 75 && job.EligibilityAssessment.IsEligible ? "job-row-strong" : null)">
+                <div class="score-block @(job.Score >= 75 ? "score-strong" : ScoreClass(job.Score))">
+                    <strong>@job.Score</strong><span>MATCH</span>
+                </div>
+                <div class="job-primary">
+                    <div class="job-title-line">
+                        <a href="@($"/jobs/{job.Posting.Id}")">@job.Posting.Title</a>
+                        <span class="status-badge status-@job.Posting.Status.ToString().ToLowerInvariant()">@job.Posting.Status</span>
+                        @if (!job.EligibilityAssessment.IsEligible)
+                        {
+                            <span class="eligibility-badge">Ineligible</span>
+                        }
+                    </div>
+                    <div class="company">@job.Posting.Company</div>
+                    <div class="metadata">
+                        <span>@job.Posting.WorkLocationType · @ValueOrUnknown(job.Posting.Location)</span>
+                        <span>@job.Posting.EmploymentType</span>
+                        <span>@FormatCompensation(job)</span>
+                    </div>
+                    @if (job.Posting.Skills.Count > 0)
+                    {
+                        <div class="skill-list">
+                            @foreach (var skill in job.Posting.Skills.Take(6))
+                            {
+                                <span>@skill</span>
+                            }
+                        </div>
+                    }
+                </div>
+                <div class="job-secondary">
+                    <span>Found @FormatRelativeDate(job.FirstSeenUtc)</span>
+                    <span>@string.Join(" + ", job.Sources.Select(SourceLabel).Distinct(StringComparer.OrdinalIgnoreCase))</span>
+                    <a class="review-link" href="@($"/jobs/{job.Posting.Id}")">Review <span aria-hidden="true">&#8594;</span></a>
+                </div>
+            </article>
+        }
+    </section>
+
+    <nav class="pagination" aria-label="Job pages">
+        <button @onclick="PreviousPageAsync" disabled="@(jobs.Page <= 1)">&#8592; Previous</button>
+        <span>Page @jobs.Page of @jobs.TotalPages</span>
+        <button @onclick="NextPageAsync" disabled="@(jobs.Page >= jobs.TotalPages)">Next &#8594;</button>
+    </nav>
+}
+
+@if (sourceAnalytics.Count > 0)
+{
+    <section class="source-health">
+        <div class="section-heading"><h2>Source health</h2><span>Discovery and fetch activity</span></div>
+        <div class="source-health-grid">
+            @foreach (var source in sourceAnalytics)
+            {
+                <article>
+                    <div><strong>@source.Board</strong><span>@source.Source</span></div>
+                    <dl>
+                        <div><dt>Stored</dt><dd>@source.StoredJobs</dd></div>
+                        <div><dt>24h / 7d</dt><dd>@source.DiscoveredLast24Hours / @source.DiscoveredLast7Days</dd></div>
+                        <div><dt>Avg.</dt><dd>@source.AverageScore.ToString("0")</dd></div>
+                        <div><dt>75+</dt><dd>@source.StrongMatches</dd></div>
+                    </dl>
+                    <p>Last success: @FormatTimestamp(source.LastSuccessfulFetchUtc)</p>
+                    @if (source.LastFailedFetchUtc is not null)
+                    {
+                        <p class="source-error" title="@source.LastFailure">Last failure: @FormatTimestamp(source.LastFailedFetchUtc)</p>
+                    }
+                </article>
+            }
+        </div>
+    </section>
+}
+
+@code {
+    private const int PageSize = 20;
+    private PagedResult<StoredJob>? jobs;
+    private IReadOnlyList<SourceAnalytics> sourceAnalytics = [];
+    private DashboardSummary? summary;
+    private FetchRunResult? fetchResult;
+    private bool isLoading = true;
+    private bool isFetching;
+    private string fetchMessage = string.Empty;
+    private int minimumScore;
+    private int currentPage = 1;
+    private ApplicationStatus? statusFilter;
+    private WorkLocationType? locationFilter;
+    private EmploymentType? employmentFilter;
+    private string compensationFilter = "any";
+    private string dateFilter = "all";
+    private string keyword = string.Empty;
+    private JobSort sort = JobSort.Score;
+
+    protected override async Task OnInitializedAsync() => await ReloadAsync();
+
+    private async Task ReloadAsync()
+    {
+        isLoading = true;
+        var now = DateTimeOffset.UtcNow;
+        summary = await Repository.GetDashboardSummaryAsync(now);
+        sourceAnalytics = await Repository.GetSourceAnalyticsAsync(now);
+        jobs = await Repository.SearchAsync(CreateFilter(now), sort, currentPage, PageSize);
+        if (currentPage > jobs.TotalPages)
+        {
+            currentPage = jobs.TotalPages;
+            jobs = await Repository.SearchAsync(CreateFilter(now), sort, currentPage, PageSize);
+        }
+        isLoading = false;
+    }
+
+    private async Task ResetAndLoadAsync()
+    {
+        currentPage = 1;
+        await ReloadAsync();
+    }
+
+    private JobListFilter CreateFilter(DateTimeOffset now)
+    {
+        bool? hasCompensation = compensationFilter switch { "known" => true, "unknown" => false, _ => null };
+        DateTimeOffset? discoveredAfter = dateFilter switch
+        {
+            "day" => now.AddHours(-24),
+            "week" => now.AddDays(-7),
+            "month" => now.AddDays(-30),
+            _ => null
+        };
+        return new JobListFilter(minimumScore, statusFilter, locationFilter, employmentFilter, hasCompensation, keyword, discoveredAfter);
+    }
+
+    private async Task FetchJobsAsync()
+    {
+        isFetching = true;
+        fetchMessage = string.Empty;
+        fetchResult = null;
+        try
+        {
+            var request = new JobSourceRequest(Preferences.SearchTerms, Preferences.PreferredKeywords, Preferences.AllowedCountryCodes.FirstOrDefault() ?? string.Empty, Preferences.MaximumResultsPerSource);
+            fetchResult = await FetchCoordinator.FetchAsync(request, Preferences);
+            await ReloadAsync();
+        }
+        catch (Exception exception)
+        {
+            fetchMessage = $"Fetch failed: {exception.Message}";
+        }
+        finally
+        {
+            isFetching = false;
+        }
+    }
+
+    private async Task PreviousPageAsync() { currentPage--; await ReloadAsync(); }
+    private async Task NextPageAsync() { currentPage++; await ReloadAsync(); }
+
+    private static string SourceResultText(SourceFetchResult source) => source.Status switch
+    {
+        SourceFetchStatus.Succeeded => $"{source.Retrieved} retrieved, {source.NewJobs} new, {source.UpdatedJobs} updated",
+        SourceFetchStatus.Cooldown => $"available after {source.RetryAtUtc?.ToLocalTime():t}",
+        _ => source.Error
+    };
+
+    private static string SourceLabel(JobSourceReference source) => string.IsNullOrWhiteSpace(source.Board) ? source.Source : $"{source.Source}: {source.Board}";
+    private static string ScoreClass(int score) => score >= 50 ? "score-medium" : "score-low";
+    private static string ValueOrUnknown(string value) => string.IsNullOrWhiteSpace(value) ? "Location not specified" : value;
+    private static string FormatTimestamp(DateTimeOffset? value) => value?.ToLocalTime().ToString("MMM d, h:mm tt") ?? "Never";
+
+    private static string FormatCompensation(StoredJob job)
+    {
+        if (!string.IsNullOrWhiteSpace(job.Posting.CompensationDescription)) return job.Posting.CompensationDescription;
+        return (job.Posting.MinimumHourlyRate, job.Posting.MaximumHourlyRate) switch
+        {
+            (null, null) => "Compensation unknown",
+            (var minimum, null) => $"{job.Posting.Currency} {minimum:0}/hr",
+            (null, var maximum) => $"Up to {job.Posting.Currency} {maximum:0}/hr",
+            (var minimum, var maximum) => $"{job.Posting.Currency} {minimum:0}-{maximum:0}/hr"
+        };
+    }
+
+    private static string FormatRelativeDate(DateTimeOffset date)
+    {
+        var elapsed = DateTimeOffset.UtcNow - date;
+        if (elapsed.TotalHours < 24) return "today";
+        if (elapsed.TotalDays < 2) return "yesterday";
+        if (elapsed.TotalDays < 7) return $"{(int)elapsed.TotalDays} days ago";
+        return date.ToLocalTime().ToString("MMM d");
+    }
+}
