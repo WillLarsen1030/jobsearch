@@ -11,5 +11,6 @@ internal sealed class ApplicationQuestionEntity
     public string OptionsJson { get; set; } = "[]";
     public bool IsRequired { get; set; }
     public string? Answer { get; set; }
+    public string DraftAnswer { get; set; } = string.Empty;
     public bool IsResolved { get; set; }
 }

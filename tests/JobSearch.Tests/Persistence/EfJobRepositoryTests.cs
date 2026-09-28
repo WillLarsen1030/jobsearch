@@ -132,7 +132,7 @@ public sealed class EfJobRepositoryTests
         var applied = await fixture.Context.Database.GetAppliedMigrationsAsync();
 
         Assert.Empty(pending);
-        Assert.Equal(4, applied.Count());
+        Assert.Equal(5, applied.Count());
     }
 
     [Fact]

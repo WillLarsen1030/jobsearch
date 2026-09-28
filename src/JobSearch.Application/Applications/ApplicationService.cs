@@ -1,4 +1,5 @@
 using JobSearch.Application.Persistence;
+using JobSearch.Application.Career;
 
 namespace JobSearch.Application.Applications;
 
@@ -11,6 +12,8 @@ public sealed class ApplicationService(
     IApplicationRepository applications,
     IJobRepository jobs,
     IApplicantProfileStore profiles,
+    ICareerProfileRepository careers,
+    IApplicationAnswerDraftingService answerDrafting,
     IApplicationAutomator automator,
     AutomationPolicy policy,
     TimeProvider timeProvider)
@@ -20,10 +23,13 @@ public sealed class ApplicationService(
         var job = await jobs.GetByIdAsync(jobId, cancellationToken)
             ?? throw new KeyNotFoundException($"Job '{jobId}' was not found.");
         var profile = await profiles.GetAsync(cancellationToken);
+        var selectedResume = await SelectResumeAsync(jobId, profile.ResumePath, cancellationToken);
         var application = await applications.CreateAsync(jobId, ApplicationPlatformDetector.Detect(job.Posting.Url),
-            job.Posting.Url, profile.ResumePath, AutomationMode.ReviewBeforeSubmit, timeProvider.GetUtcNow(), cancellationToken);
+            job.Posting.Url, selectedResume, AutomationMode.ReviewBeforeSubmit, timeProvider.GetUtcNow(), cancellationToken);
+        if (!string.Equals(application.ResumePath, selectedResume, StringComparison.OrdinalIgnoreCase))
+            application = await applications.UpdateResumeAsync(application.Id, selectedResume, timeProvider.GetUtcNow(), cancellationToken);
         if (application.Status != ApplicationWorkflowStatus.Draft) return application;
-        if (!profiles.Validate(profile).ResumeExists) return application;
+        if (!File.Exists(selectedResume)) return application;
         return await applications.TransitionAsync(application.Id, ApplicationWorkflowStatus.Prepared, timeProvider.GetUtcNow(),
             "Application package prepared and the configured resume was verified.", cancellationToken);
     }
@@ -68,6 +74,23 @@ public sealed class ApplicationService(
         return application;
     }
 
+    public Task<JobApplication> SaveQuestionDraftAsync(Guid applicationId, Guid questionId, string draft, CancellationToken cancellationToken = default) =>
+        applications.SaveQuestionDraftAsync(applicationId, questionId, draft, cancellationToken);
+
+    public async Task<JobApplication> DraftQuestionAsync(Guid applicationId, Guid questionId, CancellationToken cancellationToken = default)
+    {
+        var application = await applications.GetAsync(applicationId, cancellationToken)
+            ?? throw new KeyNotFoundException($"Application '{applicationId}' was not found.");
+        var question = application.Questions.SingleOrDefault(value => value.Id == questionId)
+            ?? throw new KeyNotFoundException($"Question '{questionId}' was not found.");
+        var job = await jobs.GetByIdAsync(application.JobPostingId, cancellationToken)
+            ?? throw new KeyNotFoundException($"Job '{application.JobPostingId}' was not found.");
+        var career = await careers.GetProfileAsync(cancellationToken)
+            ?? throw new InvalidOperationException("An approved CareerProfile is required to draft an answer.");
+        var draft = answerDrafting.Draft(question.Question, job.Posting, career, await profiles.GetAsync(cancellationToken));
+        return await applications.SaveQuestionDraftAsync(applicationId, questionId, draft.Draft, cancellationToken);
+    }
+
     public async Task<JobApplication> MarkSubmittedAsync(Guid id, CancellationToken cancellationToken = default)
     {
         var application = await applications.TransitionAsync(id, ApplicationWorkflowStatus.Submitted, timeProvider.GetUtcNow(),
@@ -85,4 +108,12 @@ public sealed class ApplicationService(
         requested == AutomationMode.AutoSubmit && (!applicationApproved || !policy.AllowsAutoSubmit(platform))
             ? AutomationMode.ReviewBeforeSubmit
             : requested;
+
+    private async Task<string> SelectResumeAsync(Guid jobId, string fallback, CancellationToken cancellationToken)
+    {
+        var tailored = await careers.GetResumeAsync(jobId, ResumeArtifactKind.Tailored, cancellationToken);
+        if (tailored is not null && File.Exists(tailored.FilePath)) return tailored.FilePath;
+        var master = await careers.GetResumeAsync(null, ResumeArtifactKind.Master, cancellationToken);
+        return master is not null && File.Exists(master.FilePath) ? master.FilePath : fallback;
+    }
 }

@@ -12,6 +12,12 @@ public sealed class JobSearchAppSettings
     public JobSourceSettings JobSources { get; init; } = new();
     public ApplicantProfileSettings ApplicantProfile { get; init; } = new();
     public ApplicationAutomationSettings ApplicationAutomation { get; init; } = new();
+    public CareerSettings Career { get; init; } = new();
+}
+
+public sealed class CareerSettings
+{
+    public string ResumeOutputDirectory { get; init; } = "data/resumes";
 }
 
 public sealed class ApplicantProfileSettings

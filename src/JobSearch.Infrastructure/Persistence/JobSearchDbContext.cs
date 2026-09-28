@@ -13,6 +13,11 @@ public sealed class JobSearchDbContext(DbContextOptions<JobSearchDbContext> opti
     internal DbSet<ApplicationEventEntity> ApplicationEvents => Set<ApplicationEventEntity>();
     internal DbSet<ApplicationQuestionEntity> ApplicationQuestions => Set<ApplicationQuestionEntity>();
     internal DbSet<ApplicationAnswerEntity> ApplicationAnswers => Set<ApplicationAnswerEntity>();
+    internal DbSet<CareerProfileEntity> CareerProfiles => Set<CareerProfileEntity>();
+    internal DbSet<ResumeImportEntity> ResumeImports => Set<ResumeImportEntity>();
+    internal DbSet<JobFitAnalysisEntity> JobFitAnalyses => Set<JobFitAnalysisEntity>();
+    internal DbSet<ResumeArtifactEntity> ResumeArtifacts => Set<ResumeArtifactEntity>();
+    internal DbSet<CareerProfileQuestionEntity> CareerProfileQuestions => Set<CareerProfileQuestionEntity>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -97,6 +102,7 @@ public sealed class JobSearchDbContext(DbContextOptions<JobSearchDbContext> opti
         questions.Property(question => question.NormalizedQuestion).HasMaxLength(2000);
         questions.Property(question => question.FieldType).HasMaxLength(100);
         questions.Property(question => question.Answer).HasMaxLength(4000);
+        questions.Property(question => question.DraftAnswer).HasMaxLength(4000);
         questions.HasOne(question => question.Application)
             .WithMany(application => application.Questions)
             .HasForeignKey(question => question.ApplicationId)
@@ -110,5 +116,36 @@ public sealed class JobSearchDbContext(DbContextOptions<JobSearchDbContext> opti
         answers.Property(answer => answer.NormalizedPattern).HasMaxLength(1000);
         answers.Property(answer => answer.Answer).HasMaxLength(4000);
         answers.Property(answer => answer.Notes).HasMaxLength(2000);
+
+        var careerProfiles = modelBuilder.Entity<CareerProfileEntity>();
+        careerProfiles.ToTable("CareerProfiles");
+        careerProfiles.HasKey(value => value.Id);
+        careerProfiles.HasIndex(value => value.Version).IsUnique();
+
+        var resumeImports = modelBuilder.Entity<ResumeImportEntity>();
+        resumeImports.ToTable("ResumeImports");
+        resumeImports.HasKey(value => value.Id);
+        resumeImports.Property(value => value.SourcePath).HasMaxLength(2000);
+
+        var fitAnalyses = modelBuilder.Entity<JobFitAnalysisEntity>();
+        fitAnalyses.ToTable("JobFitAnalyses");
+        fitAnalyses.HasKey(value => value.Id);
+        fitAnalyses.HasIndex(value => new { value.JobId, value.CreatedAtUtc });
+        fitAnalyses.HasOne<JobEntity>().WithMany().HasForeignKey(value => value.JobId).OnDelete(DeleteBehavior.Cascade);
+
+        var resumeArtifacts = modelBuilder.Entity<ResumeArtifactEntity>();
+        resumeArtifacts.ToTable("ResumeArtifacts");
+        resumeArtifacts.HasKey(value => value.Id);
+        resumeArtifacts.HasIndex(value => new { value.JobId, value.Kind, value.GeneratedAtUtc });
+        resumeArtifacts.Property(value => value.FileName).HasMaxLength(500);
+        resumeArtifacts.Property(value => value.FilePath).HasMaxLength(2000);
+        resumeArtifacts.HasOne<JobEntity>().WithMany().HasForeignKey(value => value.JobId).OnDelete(DeleteBehavior.Cascade);
+
+        var careerQuestions = modelBuilder.Entity<CareerProfileQuestionEntity>();
+        careerQuestions.ToTable("CareerProfileQuestions");
+        careerQuestions.HasKey(value => value.Id);
+        careerQuestions.Property(value => value.Question).HasMaxLength(2000);
+        careerQuestions.Property(value => value.Category).HasMaxLength(200);
+        careerQuestions.Property(value => value.Answer).HasMaxLength(4000);
     }
 }

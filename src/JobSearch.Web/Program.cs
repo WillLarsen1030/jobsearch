@@ -7,10 +7,12 @@ using JobSearch.Application.Matching;
 using JobSearch.Application.Persistence;
 using JobSearch.Application.Review;
 using JobSearch.Application.Sources;
+using JobSearch.Application.Career;
 using JobSearch.Infrastructure.Configuration;
 using JobSearch.Infrastructure.Applications;
 using JobSearch.Infrastructure.Persistence;
 using JobSearch.Infrastructure.Sources;
+using JobSearch.Infrastructure.Career;
 using JobSearch.Web.Components;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.HttpOverrides;
@@ -33,6 +35,7 @@ builder.Services.AddScoped<EfJobRepository>();
 builder.Services.AddScoped<IJobRepository>(services => services.GetRequiredService<EfJobRepository>());
 builder.Services.AddScoped<IFetchStateStore>(services => services.GetRequiredService<EfJobRepository>());
 builder.Services.AddScoped<IApplicationRepository, EfApplicationRepository>();
+builder.Services.AddScoped<ICareerProfileRepository, EfCareerProfileRepository>();
 builder.Services.AddSingleton(settings);
 builder.Services.AddSingleton(settings.JobSearch);
 builder.Services.AddSingleton(TimeProvider.System);
@@ -48,11 +51,17 @@ builder.Services.AddSingleton<IApplicationPlatformHandler, GreenhouseApplication
 builder.Services.AddSingleton<IApplicationPlatformHandler, LeverApplicationHandler>();
 builder.Services.AddSingleton<IApplicationPlatformHandler, GenericApplicationHandler>();
 builder.Services.AddSingleton<IApplicationAutomator, PlaywrightApplicationAutomator>();
+builder.Services.AddSingleton<IResumeImportService, DocxResumeImportService>();
+builder.Services.AddSingleton<ICareerAnalysisService, DeterministicCareerAnalysisService>();
+builder.Services.AddSingleton<IResumeTailoringService, OpenXmlResumeTailoringService>();
+builder.Services.AddSingleton<IApplicationAnswerDraftingService, DeterministicApplicationAnswerDraftingService>();
+builder.Services.AddSingleton(new CareerOutputOptions(DatabasePathResolver.Resolve(settings.Career.ResumeOutputDirectory, builder.Environment.ContentRootPath)));
 builder.Services.AddSingleton(new AutomationPolicy(settings.ApplicationAutomation.AutoSubmitEnabledPlatforms
     .Select(value => Enum.TryParse<ApplicationPlatform>(value, true, out var platform) ? platform : ApplicationPlatform.Generic)
     .Where(platform => platform != ApplicationPlatform.Generic)
     .ToHashSet()));
 builder.Services.AddScoped<ApplicationService>();
+builder.Services.AddScoped<CareerService>();
 foreach (var clientName in new[] { "Jobicy", "Greenhouse", "Lever" })
 {
     builder.Services.AddHttpClient(clientName, client =>

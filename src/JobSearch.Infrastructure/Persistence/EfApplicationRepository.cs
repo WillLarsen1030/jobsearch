@@ -143,6 +143,31 @@ public sealed class EfApplicationRepository(JobSearchDbContext dbContext) : IApp
         return Map(entity);
     }
 
+    public async Task<JobApplication> SaveQuestionDraftAsync(Guid applicationId, Guid questionId, string draft, CancellationToken cancellationToken = default)
+    {
+        var entity = await LoadAsync(applicationId, cancellationToken);
+        var question = entity.Questions.SingleOrDefault(value => value.Id == questionId)
+            ?? throw new KeyNotFoundException($"Question '{questionId}' was not found.");
+        question.DraftAnswer = draft.Trim();
+        question.IsResolved = false;
+        question.Answer = null;
+        entity.UpdatedAtUtc = DateTimeOffset.UtcNow;
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return Map(entity);
+    }
+
+    public async Task<JobApplication> UpdateResumeAsync(Guid id, string resumePath, DateTimeOffset now, CancellationToken cancellationToken = default)
+    {
+        var entity = await LoadAsync(id, cancellationToken);
+        if (entity.Status is not (int)ApplicationWorkflowStatus.Draft and not (int)ApplicationWorkflowStatus.Prepared)
+            throw new InvalidOperationException("The resume can only be changed before an application is approved.");
+        entity.ResumePath = resumePath;
+        entity.UpdatedAtUtc = now;
+        AddEvent(entity, ApplicationEventType.Prepared, now, $"Selected resume: {Path.GetFileName(resumePath)}");
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return Map(entity);
+    }
+
     public async Task<JobApplication> SetAutoSubmitApprovalAsync(Guid id, bool approved, CancellationToken cancellationToken = default)
     {
         var entity = await LoadAsync(id, cancellationToken);
@@ -232,7 +257,7 @@ public sealed class EfApplicationRepository(JobSearchDbContext dbContext) : IApp
         entity.Questions.OrderBy(question => question.IsResolved).Select(question => new PendingApplicationQuestion(
             question.Id, question.Question, question.NormalizedQuestion, question.FieldType,
             JsonSerializer.Deserialize<string[]>(question.OptionsJson, JsonOptions) ?? [], question.IsRequired,
-            question.Answer, question.IsResolved)).ToArray(),
+            question.Answer, question.IsResolved, question.DraftAnswer)).ToArray(),
         entity.Events.OrderByDescending(applicationEvent => applicationEvent.OccurredAtUtc).Select(applicationEvent =>
             new ApplicationEvent(applicationEvent.Id, (ApplicationEventType)applicationEvent.Type,
                 applicationEvent.OccurredAtUtc, applicationEvent.Message)).ToArray());

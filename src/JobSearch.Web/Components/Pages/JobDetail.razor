@@ -3,6 +3,8 @@
 @inject NavigationManager Navigation
 @inject ApplicationService ApplicationService
 @inject IApplicationRepository ApplicationRepository
+@inject CareerService CareerService
+@inject ICareerProfileRepository CareerRepository
 
 <PageTitle>@(job is null ? "Job" : $"{job.Posting.Title} | JobSearch")</PageTitle>
 
@@ -79,6 +81,22 @@ else
             </section>
 
             <section class="detail-section">
+                <div class="section-heading"><h2>Career fit</h2><span>Compared only with verified CareerProfile evidence</span></div>
+                @if (fitAnalysis is null)
+                {
+                    <p class="muted-copy">Run a separate evidence-based comparison before tailoring this application.</p>
+                }
+                else
+                {
+                    <div class="fit-score"><strong>@fitAnalysis.OverallFit</strong><span>OVERALL FIT</span></div>
+                    <div class="fit-columns"><div><h3>Matched</h3>@foreach (var item in fitAnalysis.MatchedRequirements) { <span>@item.Name</span> }</div><div><h3>Partially matched</h3>@foreach (var item in fitAnalysis.PartiallyMatchedRequirements) { <span>@item.Name</span> }</div><div><h3>Not found in CareerProfile</h3>@foreach (var item in fitAnalysis.NotFoundRequirements) { <span>@item.Name</span> }</div></div>
+                    <h3>Relevant evidence</h3>
+                    @foreach (var evidence in fitAnalysis.RelevantEvidence) { <p><strong>@evidence.Employer · @evidence.Title</strong><br />@evidence.Statement</p> }
+                    @if (fitAnalysis.Concerns.Count > 0) { <h3>Possible concerns</h3><ul>@foreach (var concern in fitAnalysis.Concerns) { <li>@concern</li> }</ul> }
+                }
+            </section>
+
+            <section class="detail-section">
                 <div class="section-heading"><h2>Source provenance</h2><span>@job.Sources.Count source@(job.Sources.Count == 1 ? "" : "s")</span></div>
                 <div class="source-list">
                     @foreach (var source in job.Sources)
@@ -106,6 +124,12 @@ else
                     <p class="muted-copy">@application.Platform · @application.AutomationMode</p>
                     <a class="btn-primary-action full-button" href="@($"/applications/{application.Id}")">Review application</a>
                 }
+            </section>
+            <section class="side-panel">
+                <h2>Evidence workflow</h2>
+                <button class="btn-secondary-action full-button" @onclick="AnalyzeFitAsync">Analyze Fit</button>
+                <button class="btn-primary-action full-button" @onclick="GenerateTailoredResumeAsync" disabled="@(fitAnalysis is null)">Generate Tailored Resume</button>
+                @if (tailoredResume is not null) { <p class="muted-copy"><strong>Selected file</strong><br />@tailoredResume.FileName<br />CareerProfile v@(tailoredResume.CareerProfileVersion)</p> }
             </section>
             <section class="side-panel workflow-panel">
                 <h2>Review status</h2>
@@ -198,6 +222,8 @@ else
     private string saveMessage = string.Empty;
     private bool isLoading = true;
     private JobApplication? application;
+    private JobFitAnalysis? fitAnalysis;
+    private ResumeArtifact? tailoredResume;
 
     protected override async Task OnParametersSetAsync()
     {
@@ -207,8 +233,22 @@ else
             selectedStatus = job.Posting.Status;
             notes = job.Notes;
             application = await ApplicationRepository.GetForJobAsync(Id);
+            fitAnalysis = await CareerRepository.GetFitAnalysisAsync(Id);
+            tailoredResume = await CareerRepository.GetResumeAsync(Id, ResumeArtifactKind.Tailored);
         }
         isLoading = false;
+    }
+
+    private async Task AnalyzeFitAsync()
+    {
+        try { fitAnalysis = await CareerService.AnalyzeAsync(Id); saveMessage = $"Career fit analyzed: {fitAnalysis.OverallFit}/100."; }
+        catch (Exception exception) { saveMessage = exception.Message; }
+    }
+
+    private async Task GenerateTailoredResumeAsync()
+    {
+        try { tailoredResume = await CareerService.GenerateTailoredAsync(Id); saveMessage = $"Tailored résumé generated: {tailoredResume.FileName}"; }
+        catch (Exception exception) { saveMessage = exception.Message; }
     }
 
     private async Task PrepareApplicationAsync()

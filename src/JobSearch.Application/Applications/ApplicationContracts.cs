@@ -9,6 +9,8 @@ public interface IApplicationRepository
     Task<JobApplication> TransitionAsync(Guid id, ApplicationWorkflowStatus status, DateTimeOffset now, string message, CancellationToken cancellationToken = default);
     Task<JobApplication> RecordAutomationResultAsync(Guid id, AutomationResult result, DateTimeOffset now, CancellationToken cancellationToken = default);
     Task<JobApplication> ResolveQuestionAsync(Guid applicationId, Guid questionId, string answer, DateTimeOffset now, CancellationToken cancellationToken = default);
+    Task<JobApplication> SaveQuestionDraftAsync(Guid applicationId, Guid questionId, string draft, CancellationToken cancellationToken = default);
+    Task<JobApplication> UpdateResumeAsync(Guid id, string resumePath, DateTimeOffset now, CancellationToken cancellationToken = default);
     Task<JobApplication> SetAutoSubmitApprovalAsync(Guid id, bool approved, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<ApplicationAnswer>> GetAnswersAsync(CancellationToken cancellationToken = default);
     Task<ApplicationAnswer> SaveAnswerAsync(ApplicationAnswer answer, CancellationToken cancellationToken = default);

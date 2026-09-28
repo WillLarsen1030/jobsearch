@@ -66,7 +66,8 @@ public sealed record PendingApplicationQuestion(
     IReadOnlyList<string> Options,
     bool IsRequired,
     string? Answer,
-    bool IsResolved);
+    bool IsResolved,
+    string DraftAnswer = "");
 
 public sealed record JobApplication(
     Guid Id,

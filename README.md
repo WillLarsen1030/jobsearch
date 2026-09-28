@@ -38,6 +38,14 @@ The default mode is `ReviewBeforeSubmit`. Browser sessions are headed by default
 
 Applicant facts and the master resume path are stored in ignored `data/applicant-profile.json`. The safe committed shape is [config/applicant-profile.example.json](config/applicant-profile.example.json). Résumés, browser data, logs, and failure screenshots are also ignored. Only PDF and DOCX résumé paths are accepted by the profile UI.
 
+## Career profile and resumes
+
+The **Career Profile** page imports a DOCX résumé into a review record without overwriting existing facts. It shows extracted, existing, and proposed values alongside conflicts and ambiguities. Approval creates a versioned professional evidence snapshot that remains separate from personal application data in `ApplicantProfile`.
+
+Fit analysis compares a selected posting with the approved CareerProfile and labels unsupported requirements as "not found" rather than assuming the candidate lacks them. Master and tailored DOCX résumés are generated from evidence IDs in the approved profile; unknown evidence is rejected. Tailored artifacts retain the job ID, generation time, and CareerProfile version for traceability.
+
+Generated résumés are written to ignored `data/resumes/`. Open-ended application answers are drafts until explicitly approved, and application preparation shows the exact tailored or master résumé selected before browser filling begins. The default deterministic services require no AI credentials.
+
 ## Job sources
 
 - [Jobicy's public API](https://jobicy.com/jobs-rss-feed) supplies broad remote-job discovery with geography, industry, and keyword filters.
@@ -100,38 +108,9 @@ Check migration consistency with:
 dotnet ef migrations has-pending-model-changes --project src/JobSearch.Infrastructure --startup-project src/JobSearch.Infrastructure
 ```
 
-## Private Cloudflare access
-
-Cloudflare Pages cannot host this application: Cloudflare's current Blazor guidance states that Blazor Server is incompatible with its edge model and supports Blazor WebAssembly instead. Workers also do not provide the persistent Windows process, local filesystem, or headed Chrome environment this application requires. The supported design is:
-
-```text
-Remote browser
-  -> Cloudflare Access authentication
-  -> Cloudflare Tunnel
-  -> http://127.0.0.1:5088 on this Windows PC
-  -> local SQLite, profile, resumes, Playwright, and Chrome
-```
-
-The tunnel is outbound-only; do not forward port 5088 on the router. Blazor's SignalR/WebSocket connection passes through the tunnel, while the origin remains bound to loopback. Create the Access application **before** publishing the tunnel hostname, because a tunnel hostname without Access is reachable publicly.
-
-Prerequisites are an active domain in Cloudflare and an Access policy that allows only your identity. Then:
-
-1. Install the connector: `winget install --id Cloudflare.cloudflared --exact`.
-2. In Cloudflare Zero Trust, create a self-hosted Access application for the intended hostname and an Allow policy restricted to your email or identity provider. Leave the deny-by-default behavior in place.
-3. Authenticate locally: `cloudflared tunnel login`.
-4. Create the tunnel: `cloudflared tunnel create jobsearch`.
-5. Copy `deploy/cloudflare/config.example.yml` to `%USERPROFILE%\.cloudflared\config.yml`, replacing placeholders locally.
-6. Validate it: `cloudflared tunnel ingress validate`.
-7. Only after Access exists, create DNS routing: `cloudflared tunnel route dns jobsearch <protected-hostname>`.
-8. Start the loopback-bound web app, then run `cloudflared tunnel run jobsearch` in a second terminal.
-
-Stop remote access with `Ctrl+C` in the tunnel terminal; localhost remains available while the web process is running. Stop the app with `Ctrl+C` in its terminal. If the connector is later installed as a Windows service, use `Stop-Service cloudflared` and `Start-Service cloudflared` from an elevated PowerShell session. Tunnel `cert.pem`, UUID credential JSON, and the real `config.yml` remain under `%USERPROFILE%\.cloudflared`, outside this repository.
-
-Official references: [Blazor on Pages](https://developers.cloudflare.com/pages/framework-guides/deploy-a-blazor-site/), [private web applications](https://developers.cloudflare.com/cloudflare-one/setup/secure-private-apps/private-web-app/), [self-hosted Access applications](https://developers.cloudflare.com/cloudflare-one/access-controls/applications/http-apps/self-hosted-public-app/), and [Cloudflare Tunnel on Windows](https://developers.cloudflare.com/tunnel/features/locally-managed-tunnels/as-a-service/windows/).
-
 ## Planned increments
 
 1. Harden platform handlers against additional real-world Greenhouse and Lever form variants.
-2. Add optional tailored résumé files without modifying the factual master profile.
+2. Improve CareerProfile evidence with factual answers supplied through the question queue.
 3. Consider enabling guarded submission per platform only after extensive reviewed runs.
 4. Add follow-up and contact workflows after the assisted-application path is proven stable.

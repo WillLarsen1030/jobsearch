@@ -1,0 +1,143 @@
+@page "/career"
+@inject CareerService Service
+@inject ICareerProfileRepository Repository
+
+<PageTitle>Career Profile | JobSearch</PageTitle>
+
+<header class="page-header">
+    <div><p class="eyebrow">VERIFIED PROFESSIONAL EVIDENCE</p><h1>Career profile</h1><p class="page-subtitle">Review imported facts, correct them, and keep every generated claim traceable.</p></div>
+</header>
+
+@if (!string.IsNullOrWhiteSpace(message))
+{
+    <div class="fetch-result @(isError ? "fetch-warning" : "fetch-success")" role="status">@message</div>
+}
+
+<section class="form-section">
+    <div class="section-heading"><h2>Import résumé</h2><span>DOCX remains local and is never copied into Git</span></div>
+    <label class="wide-field">Absolute DOCX path<InputText @bind-Value="resumePath" /></label>
+    <div class="form-actions"><button class="btn-secondary-action" @onclick="ImportAsync">Extract for review</button></div>
+</section>
+
+@if (importReview is not null)
+{
+    <section class="detail-section">
+        <div class="section-heading"><h2>Import review</h2><span>@importReview.Status</span></div>
+        <div class="comparison-list">
+            @foreach (var item in importReview.Comparisons)
+            {
+                <article class="comparison-row @(item.HasConflict ? "has-conflict" : "")">
+                    <strong>@item.Field</strong>
+                    <div><span>Extracted</span><p>@ValueOrNone(item.ExtractedValue)</p></div>
+                    <div><span>Existing</span><p>@ValueOrNone(item.ExistingValue)</p></div>
+                    <div><span>Proposed</span><p>@ValueOrNone(item.ProposedValue)</p></div>
+                    @if (!string.IsNullOrWhiteSpace(item.Note)) { <small>@item.Note</small> }
+                </article>
+            }
+        </div>
+        <h3>Ambiguities requiring human judgment</h3>
+        <ul>@foreach (var item in importReview.Ambiguities) { <li>@item</li> }</ul>
+        @if (importReview.Status == ResumeImportStatus.PendingReview)
+        {
+            <button class="btn-primary-action" @onclick="ApproveImportAsync">Approve imported CareerProfile</button>
+        }
+    </section>
+}
+
+@if (profile is not null)
+{
+    <EditForm Model="profile" OnValidSubmit="SaveProfileAsync" class="profile-form">
+        <section class="form-section">
+            <div class="section-heading"><h2>Professional identity</h2><span>Version @profile.Version · @profile.Status</span></div>
+            <label class="wide-field">Headline<InputText @bind-Value="profile.Headline" /></label>
+            <label class="wide-field">Professional summary<InputTextArea rows="5" @bind-Value="profile.ProfessionalSummary" /></label>
+            <label>Total experience in years<InputNumber @bind-Value="profile.TotalExperienceYears" /></label>
+        </section>
+        <section class="form-section">
+            <div class="section-heading"><h2>Skills</h2><span>Evidence links are preserved when names are corrected</span></div>
+            @foreach (var skill in profile.Skills)
+            {
+                <div class="career-edit-row"><InputText @bind-Value="skill.Name" /><InputText @bind-Value="skill.Category" /><span>@skill.EvidenceStrength</span></div>
+            }
+        </section>
+        @if (profile.GeneralEvidence.Count > 0)
+        {
+            <section class="form-section">
+                <div class="section-heading"><h2>Career-wide evidence</h2><span>Verified facts not assigned to a specific employer</span></div>
+                @foreach (var evidence in profile.GeneralEvidence)
+                {
+                    <label class="wide-field">Verified evidence<InputTextArea rows="2" @bind-Value="evidence.Statement" /></label>
+                }
+            </section>
+        }
+        <section class="form-section">
+            <div class="section-heading"><h2>Employment evidence</h2><span>Every résumé bullet comes from these statements</span></div>
+            @foreach (var position in profile.EmploymentHistory)
+            {
+                <article class="career-position-editor">
+                    <div class="form-grid"><label>Employer<InputText @bind-Value="position.Employer" /></label><label>Title<InputText @bind-Value="position.Title" /></label><label>Start<InputText @bind-Value="position.StartDate" /></label><label>End<InputText @bind-Value="position.EndDate" /></label></div>
+                    <label class="wide-field">Technologies<input @bind="technologyText[position.Id]" /></label>
+                    @foreach (var evidence in position.Evidence)
+                    {
+                        <label class="wide-field">Verified evidence<InputTextArea rows="2" @bind-Value="evidence.Statement" /></label>
+                    }
+                </article>
+            }
+        </section>
+        <section class="form-section">
+            <div class="section-heading"><h2>Education and links</h2><span>Credential status is explicit when verified</span></div>
+            @foreach (var education in profile.Education)
+            {
+                <div class="form-grid"><label>Institution<InputText @bind-Value="education.Institution" /></label><label>Program<InputText @bind-Value="education.Program" /></label><label>Start<InputText @bind-Value="education.StartDate" /></label><label>End<InputText @bind-Value="education.EndDate" /></label></div>
+                <p class="muted-copy"><strong>Credential status:</strong> @CredentialStatus(education)</p>
+            }
+            @foreach (var link in profile.ProfessionalLinks)
+            {
+                <div class="career-edit-row"><InputText @bind-Value="link.Label" /><InputText @bind-Value="link.Url" /></div>
+            }
+        </section>
+        <div class="form-actions"><button class="btn-secondary-action" type="submit">Save corrected profile</button><button class="btn-primary-action" type="button" @onclick="GenerateMasterAsync">Generate ATS master résumé</button></div>
+    </EditForm>
+}
+
+@if (questions.Count > 0)
+{
+    <section class="detail-section">
+        <div class="section-heading"><h2>Career Profile questions</h2><span>Answers become evidence only after approval</span></div>
+        @foreach (var question in questions)
+        {
+            <article class="question-editor"><strong>@question.Question</strong><span>@question.Category</span><InputTextArea rows="2" @bind-Value="question.Answer" /><label class="checkbox-field"><InputCheckbox @bind-Value="question.IsApproved" /> Approve as factual evidence</label><button class="btn-secondary-action" @onclick="() => SaveQuestionAsync(question)">Save answer</button></article>
+        }
+    </section>
+}
+
+@code {
+    private string resumePath = string.Empty;
+    private string message = string.Empty;
+    private bool isError;
+    private ResumeImportReview? importReview;
+    private JobSearch.Application.Career.CareerProfile? profile;
+    private List<CareerProfileQuestion> questions = [];
+    private readonly Dictionary<Guid, string> technologyText = [];
+
+    protected override async Task OnInitializedAsync() => await ReloadAsync();
+
+    private async Task ReloadAsync()
+    {
+        importReview = await Repository.GetLatestImportAsync();
+        profile = await Repository.GetProfileAsync();
+        questions = (await Repository.GetQuestionsAsync()).ToList();
+        technologyText.Clear();
+        if (profile is not null) foreach (var position in profile.EmploymentHistory) technologyText[position.Id] = string.Join(", ", position.Technologies);
+    }
+
+    private async Task ImportAsync() => await ExecuteAsync(async () => { importReview = await Service.ImportAsync(resumePath); profile = importReview.ProposedProfile; InitializeTechnologyText(); message = "Résumé extracted. Review every conflict before approval."; });
+    private async Task ApproveImportAsync() => await ExecuteAsync(async () => { profile = await Service.ApproveImportAsync(importReview!.Id); await ReloadAsync(); message = "CareerProfile approved from the reviewed résumé import."; });
+    private async Task SaveProfileAsync() => await ExecuteAsync(async () => { foreach (var position in profile!.EmploymentHistory) position.Technologies = technologyText[position.Id].Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList(); profile.Status = CareerProfileStatus.Approved; profile = await Repository.SaveProfileAsync(profile); message = $"CareerProfile version {profile.Version} saved."; });
+    private async Task GenerateMasterAsync() => await ExecuteAsync(async () => { var artifact = await Service.GenerateMasterAsync(); message = $"Master résumé generated: {artifact.FilePath}"; });
+    private async Task SaveQuestionAsync(CareerProfileQuestion question) => await ExecuteAsync(async () => { await Service.AnswerQuestionAsync(question); message = question.IsApproved ? "Approved answer saved as CareerProfile evidence." : "Draft answer saved; it is not evidence yet."; });
+    private async Task ExecuteAsync(Func<Task> action) { try { isError = false; await action(); } catch (Exception exception) { isError = true; message = exception.Message; } }
+    private static string ValueOrNone(string value) => string.IsNullOrWhiteSpace(value) ? "Not provided" : value;
+    private static string CredentialStatus(CareerEducation education) => education.CredentialEarned switch { true => "Completed credential", false => "No credential earned; coursework/attendance only", null => "Not specified" };
+    private void InitializeTechnologyText() { technologyText.Clear(); if (profile is not null) foreach (var position in profile.EmploymentHistory) technologyText[position.Id] = string.Join(", ", position.Technologies); }
+}

@@ -15,7 +15,7 @@ else {
             @if (application.Status == ApplicationWorkflowStatus.NeedsInput) {
                 <section class="detail-section needs-input-panel"><div class="section-heading"><h2>Needs your input</h2><span>Automation stopped safely</span></div>
                     @foreach (var question in application.Questions.Where(value => !value.IsResolved)) {
-                        <div class="question-editor"><strong>@question.Question</strong><span>@question.FieldType@(question.IsRequired ? " · required" : "")</span>@if (question.Options.Count > 0) { <p>Options: @string.Join(", ", question.Options)</p> }<input placeholder="Your approved answer" @bind="questionAnswers[question.Id]" /><label class="checkbox-field"><input type="checkbox" @bind="saveAnswers[question.Id]" /> Save this answer for similar future questions</label><button class="btn-secondary-action" @onclick="() => SaveQuestionAsync(question.Id)">Save answer</button></div>
+                        <div class="question-editor"><strong>@question.Question</strong><span>@question.FieldType@(question.IsRequired ? " · required" : "")</span>@if (question.Options.Count > 0) { <p>Options: @string.Join(", ", question.Options)</p> }@if (!string.IsNullOrWhiteSpace(question.DraftAnswer)) { <p><strong>Unapproved generated draft</strong><br />@question.DraftAnswer</p> }<input placeholder="Your approved answer" @bind="questionAnswers[question.Id]" /><label class="checkbox-field"><input type="checkbox" @bind="saveAnswers[question.Id]" /> Save this answer for similar future questions</label><div class="form-actions"><button class="btn-secondary-action" @onclick="() => DraftQuestionAsync(question.Id)">Draft from evidence</button><button class="btn-primary-action" @onclick="() => SaveQuestionAsync(question.Id)">Approve answer</button></div></div>
                     }
                 </section>
             }
@@ -45,7 +45,7 @@ else {
     private readonly Dictionary<Guid, bool> saveAnswers = [];
     private string message = string.Empty;
     private bool isError;
-    protected override async Task OnParametersSetAsync() { application = await Repository.GetAsync(Id); profile = await ProfileStore.GetAsync(); if (application is not null) foreach (var question in application.Questions.Where(value => !value.IsResolved)) { questionAnswers.TryAdd(question.Id, string.Empty); saveAnswers.TryAdd(question.Id, false); } }
+    protected override async Task OnParametersSetAsync() { application = await Repository.GetAsync(Id); profile = await ProfileStore.GetAsync(); if (application is not null) foreach (var question in application.Questions.Where(value => !value.IsResolved)) { questionAnswers.TryAdd(question.Id, question.DraftAnswer); saveAnswers.TryAdd(question.Id, false); } }
     private async Task ExecuteAsync(Func<Task<JobApplication>> action, string success) { try { isError = false; application = await action(); message = success; } catch (Exception exception) { isError = true; message = exception.Message; application = await Repository.GetAsync(Id); } }
     private Task PrepareAsync() => ExecuteAsync(() => Service.PrepareAsync(application!.JobPostingId), "Application package prepared.");
     private Task ApproveAsync() => ExecuteAsync(() => Service.ApproveAsync(Id), "Application approved. Browser filling can now begin.");
@@ -53,6 +53,7 @@ else {
     private Task MarkSubmittedAsync() => ExecuteAsync(() => Service.MarkSubmittedAsync(Id), "Application marked submitted.");
     private Task WithdrawAsync() => ExecuteAsync(() => Service.WithdrawAsync(Id), "Application withdrawn.");
     private Task SaveQuestionAsync(Guid questionId) => ExecuteAsync(() => Service.AnswerQuestionAsync(Id, questionId, questionAnswers[questionId], saveAnswers[questionId]), "Answer saved. Resolve every question before resuming.");
+    private async Task DraftQuestionAsync(Guid questionId) { await ExecuteAsync(() => Service.DraftQuestionAsync(Id, questionId), "Draft created from verified evidence. Review and approve it before filling."); var question = application!.Questions.Single(value => value.Id == questionId); questionAnswers[questionId] = question.DraftAnswer; }
     private static string StatusLabel(ApplicationWorkflowStatus value) => value switch { ApplicationWorkflowStatus.NeedsInput => "Needs Input", ApplicationWorkflowStatus.ReadyToSubmit => "Ready to Submit", _ => value.ToString() };
     private static string ValueOrNone(string? value) => string.IsNullOrWhiteSpace(value) ? "Not provided" : value;
 }
