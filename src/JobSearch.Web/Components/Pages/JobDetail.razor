@@ -3,6 +3,7 @@
 @inject NavigationManager Navigation
 @inject ApplicationService ApplicationService
 @inject IApplicationRepository ApplicationRepository
+@inject ApplicationGuidanceService ApplicationGuidance
 @inject CareerService CareerService
 @inject ICareerProfileRepository CareerRepository
 
@@ -120,9 +121,10 @@ else
                 }
                 else
                 {
-                    <div class="application-status status-@application.Status.ToString().ToLowerInvariant()">@application.Status</div>
-                    <p class="muted-copy">@application.Platform · @application.AutomationMode</p>
-                    <a class="btn-primary-action full-button" href="@($"/applications/{application.Id}")">Review application</a>
+                    var applicationAction = ApplicationGuidance.Resolve(application.Status, application.Questions.Count(value => !value.IsResolved));
+                    <div class="application-status status-@application.Status.ToString().ToLowerInvariant()">@ApplicationGuidance.StatusLabel(application.Status)</div>
+                    <p class="muted-copy">@applicationAction.Explanation</p>
+                    <a class="btn-primary-action full-button" href="@($"/applications/{application.Id}")">@applicationAction.ButtonLabel</a>
                 }
             </section>
             <section class="side-panel">

@@ -26,6 +26,7 @@
     <ProjectReference Include="..\..\src\JobSearch.Application\JobSearch.Application.csproj" />
     <ProjectReference Include="..\..\src\JobSearch.Domain\JobSearch.Domain.csproj" />
     <ProjectReference Include="..\..\src\JobSearch.Infrastructure\JobSearch.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\src\JobSearch.Web\JobSearch.Web.csproj" />
   </ItemGroup>
 
 </Project>

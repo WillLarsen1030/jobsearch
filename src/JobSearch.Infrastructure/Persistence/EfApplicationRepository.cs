@@ -34,7 +34,9 @@ public sealed class EfApplicationRepository(JobSearchDbContext dbContext) : IApp
                 (AutomationMode)application.AutomationMode,
                 application.CreatedAtUtc,
                 application.UpdatedAtUtc,
-                application.Questions.Count(question => !question.IsResolved)))
+                application.Questions.Count(question => !question.IsResolved),
+                application.Job.Score,
+                string.IsNullOrWhiteSpace(application.Job.SourceBoard) ? application.Job.Source : application.Job.SourceBoard))
             .ToListAsync(cancellationToken);
         return values.OrderBy(application => application.Status == ApplicationWorkflowStatus.NeedsInput ? 0 :
                 application.Status == ApplicationWorkflowStatus.ReadyToSubmit ? 1 : 2)
@@ -109,6 +111,8 @@ public sealed class EfApplicationRepository(JobSearchDbContext dbContext) : IApp
             AddEvent(entity, ApplicationEventType.FieldFilled, now, $"Filled {field}.");
         foreach (var answer in result.AnswersUsed)
             AddEvent(entity, ApplicationEventType.AnswerUsed, now, $"Used an approved answer for {answer}.");
+        foreach (var warning in result.Warnings)
+            AddEvent(entity, ApplicationEventType.Warning, now, warning);
         foreach (var question in result.UnknownQuestions)
         {
             if (entity.Questions.Any(existing => !existing.IsResolved && existing.NormalizedQuestion == QuestionMatcher.Normalize(question.Question))) continue;

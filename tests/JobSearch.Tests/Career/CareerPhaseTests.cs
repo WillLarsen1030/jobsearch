@@ -326,6 +326,29 @@ public sealed class CareerPhaseTests
     }
 
     [Fact]
+    public async Task MarkSubmitted_UpdatesApplicationHistoryAndJobPipeline()
+    {
+        await using var fixture = await DatabaseFixture.CreateAsync();
+        var posting = Job();
+        await fixture.Jobs.UpsertAsync(posting, new JobScore(90, []), null, DateTimeOffset.UtcNow);
+        var application = await fixture.Applications.CreateAsync(posting.Id, ApplicationPlatform.Greenhouse, posting.Url, "resume.docx", AutomationMode.ReviewBeforeSubmit, DateTimeOffset.UtcNow);
+        application = await fixture.Applications.TransitionAsync(application.Id, ApplicationWorkflowStatus.Prepared, DateTimeOffset.UtcNow, "prepared");
+        application = await fixture.Applications.TransitionAsync(application.Id, ApplicationWorkflowStatus.Approved, DateTimeOffset.UtcNow, "approved");
+        application = await fixture.Applications.TransitionAsync(application.Id, ApplicationWorkflowStatus.InProgress, DateTimeOffset.UtcNow, "started");
+        application = await fixture.Applications.RecordAutomationResultAsync(application.Id, new AutomationResult("run", ApplicationWorkflowStatus.ReadyToSubmit, [], [], [], []), DateTimeOffset.UtcNow);
+        var service = new ApplicationService(fixture.Applications, fixture.Jobs, new TestProfileStore("resume.docx"), fixture.Careers,
+            new DeterministicApplicationAnswerDraftingService(), new NoOpAutomator(), new AutomationPolicy(new HashSet<ApplicationPlatform>()), TimeProvider.System);
+
+        application = await service.MarkSubmittedAsync(application.Id);
+        var job = await fixture.Jobs.GetByIdAsync(posting.Id);
+
+        Assert.Equal(ApplicationWorkflowStatus.Submitted, application.Status);
+        Assert.NotNull(application.SubmittedAtUtc);
+        Assert.Contains(application.Events, value => value.Type == ApplicationEventType.Submitted);
+        Assert.Equal(ApplicationStatus.Applied, job!.Posting.Status);
+    }
+
+    [Fact]
     public void AnswerDraft_UsesOnlyProfileEvidenceAndRequiresApproval()
     {
         var profile = Profile();
@@ -433,6 +456,7 @@ public sealed class CareerPhaseTests
     {
         public Task<AutomationResult> RunAsync(ApplicationAutomationRequest request, CancellationToken cancellationToken = default) =>
             Task.FromResult(new AutomationResult("none", ApplicationWorkflowStatus.ReadyToSubmit, [], [], [], []));
+        public Task<bool> FocusExistingSessionAsync(Guid applicationId, CancellationToken cancellationToken = default) => Task.FromResult(false);
     }
 
     private sealed class DatabaseFixture : IAsyncDisposable

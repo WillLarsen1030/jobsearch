@@ -20,6 +20,7 @@ public interface IApplicationRepository
 public interface IApplicationAutomator
 {
     Task<AutomationResult> RunAsync(ApplicationAutomationRequest request, CancellationToken cancellationToken = default);
+    Task<bool> FocusExistingSessionAsync(Guid applicationId, CancellationToken cancellationToken = default);
 }
 
 public interface IApplicationPlatformHandler

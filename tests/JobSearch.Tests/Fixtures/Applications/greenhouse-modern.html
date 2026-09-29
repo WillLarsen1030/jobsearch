@@ -1,0 +1,71 @@
+<!doctype html>
+<html>
+<body>
+<main>
+<h1>Apply</h1>
+<form onsubmit="window.submitActivated = true; return false;">
+  <label for="first_name">First Name *</label><input id="first_name" required>
+  <label for="last_name">Last Name *</label><input id="last_name" required>
+  <label for="preferred_name">Preferred First Name</label><input id="preferred_name">
+  <label for="email">Email *</label><input id="email" required>
+  <label for="phone">Phone *</label><input id="phone" required>
+
+  <div class="field-wrapper">
+    <label for="country">Country *</label>
+    <div class="select-shell"><span class="selected"></span><input id="country" role="combobox" aria-required="true" onclick="show('country')" oninput="show('country')"><input class="requiredInput" aria-hidden="true" tabindex="-1" required>
+      <div id="country-options" role="listbox" hidden><button type="button" role="option" onclick="choose('country', 'United States')">United States</button><button type="button" role="option" onclick="choose('country', 'United Kingdom')">United Kingdom</button></div>
+    </div>
+  </div>
+
+  <div class="field-wrapper">
+    <label for="location">Candidate Location *</label>
+    <div class="select-shell"><span class="selected"></span><input id="location" role="combobox" aria-required="true" onclick="show('location')" oninput="show('location')"><input class="requiredInput" aria-hidden="true" tabindex="-1" required>
+      <div id="location-options" role="listbox" hidden><button type="button" role="option" onclick="choose('location', 'Gallatin, Tennessee, United States')">Gallatin, Tennessee, United States</button><button type="button" role="option" onclick="choose('location', 'Gallatin, Missouri, United States')">Gallatin, Missouri, United States</button></div>
+    </div>
+  </div>
+
+  <div class="field-wrapper file-upload" role="group" aria-labelledby="upload-label-resume" aria-required="true">
+    <div id="upload-label-resume">Resume/CV *</div>
+    <label for="resume">Attach</label>
+    <input id="resume" class="visually-hidden" style="display:none" aria-hidden="true" type="file" accept=".docx" onchange="uploadResume(this)">
+    <span id="resume-file-name"></span>
+  </div>
+  <label for="linkedin">LinkedIn Profile *</label><input id="linkedin" required>
+
+  <div class="field-wrapper">
+    <label for="authorization">To be considered for this role, you must be legally authorized to work in the United States without the need for employer sponsorship. Please select your current work authorization status: *</label>
+    <div class="select-shell"><span class="selected"></span><input id="authorization" role="combobox" aria-required="true" onclick="show('authorization')" oninput="show('authorization')"><input class="requiredInput" aria-hidden="true" tabindex="-1" required>
+      <div id="authorization-options" role="listbox" hidden><button type="button" role="option" onclick="choose('authorization', 'U.S. Citizen')">U.S. Citizen</button><button type="button" role="option" onclick="choose('authorization', 'U.S. Lawful Permanent Resident (Green Card holder)')">U.S. Lawful Permanent Resident (Green Card holder)</button><button type="button" role="option" onclick="choose('authorization', 'I require employer sponsorship')">I require employer sponsorship</button></div>
+    </div>
+  </div>
+
+  <label for="why">Based on what you know about Livefront/Zeal right now, why do you want to be a part of our team? *</label><textarea id="why" required></textarea>
+  <label for="referral">If you were referred to Livefront/Zeal, tell us how. *</label><select id="referral" required onchange="referralChanged(this.value)"><option></option><option>N/A</option><option>Referral - Livefront Employee</option></select>
+  <div id="referrer-wrapper"><label for="referrer">If applicable, what is the name of the person who referred you? *</label><input id="referrer" required></div>
+
+  <label for="cover_letter">Cover Letter</label><textarea id="cover_letter"></textarea>
+  <label for="agency">Please describe any digital agency experience you have!</label><textarea id="agency"></textarea>
+  <label for="gender">Gender</label><select id="gender"><option></option><option>Decline To Self Identify</option></select>
+  <button id="submit" type="submit">Submit application</button>
+</form>
+</main>
+<script>
+  window.submitActivated = false;
+  function show(id) { document.getElementById(id + '-options').hidden = false; }
+  function choose(id, value) {
+    const input = document.getElementById(id);
+    input.value = value;
+    input.closest('.select-shell').querySelector('.selected').textContent = value;
+    document.getElementById(id + '-options').hidden = true;
+  }
+  function referralChanged(value) {
+    if (value !== 'N/A') return;
+    document.getElementById('referrer-wrapper').remove();
+  }
+  function uploadResume(input) {
+    document.getElementById('resume-file-name').textContent = input.files[0].name;
+    input.replaceWith(input.cloneNode());
+  }
+</script>
+</body>
+</html>

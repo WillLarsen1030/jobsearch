@@ -1,24 +1,91 @@
 @page "/applications"
 @inject IApplicationRepository Repository
+@inject ApplicationGuidanceService Guidance
 
 <PageTitle>Applications | JobSearch</PageTitle>
-<header class="page-header"><div><p class="eyebrow">HUMAN-APPROVED WORKFLOW</p><h1>Applications</h1><p class="page-subtitle">Needs Input and Ready to Submit are kept at the top of the queue.</p></div></header>
+<header class="page-header"><div><p class="eyebrow">GUIDED WORKFLOW</p><h1>Applications</h1><p class="page-subtitle">Your active application work, ordered by what needs attention next.</p></div></header>
 
-<div class="application-metrics">
-    @foreach (var status in QueueStatuses) { <div class="metric @(status is ApplicationWorkflowStatus.NeedsInput or ApplicationWorkflowStatus.ReadyToSubmit ? "metric-attention" : "")"><span>@StatusLabel(status)</span><strong>@items.Count(item => item.Status == status)</strong></div> }
-</div>
+<section class="attention-summary" aria-labelledby="attention-heading">
+    <div class="section-heading"><h2 id="attention-heading">Today</h2><span>Application work summary</span></div>
+    <div class="attention-cards">
+        <a href="/applications?filter=review"><span>Needs review</span><strong>@dashboard.NeedsReview</strong></a>
+        <a href="/applications?filter=input" class="attention-card-urgent"><span>Needs your input</span><strong>@dashboard.NeedsInput</strong></a>
+        <a href="/applications?filter=ready" class="attention-card-ready"><span>Ready to submit</span><strong>@dashboard.ReadyToSubmit</strong></a>
+        <a href="/applications?filter=submitted"><span>Submitted this week</span><strong>@dashboard.SubmittedThisWeek</strong></a>
+    </div>
+    @if (dashboard.NextApplication is { } next)
+    {
+        var action = Guidance.Resolve(next.Status, next.UnansweredQuestions);
+        <div class="next-application"><div><span>Next application</span><strong>@next.Company · @next.JobTitle</strong><p>@action.Explanation</p></div><a class="btn-primary-action" href="@($"/applications/{next.Id}")">@action.ButtonLabel</a></div>
+    }
+    else
+    {
+        <div class="empty-state compact-empty"><strong>No applications need your attention.</strong><span>Prepared or partially filled applications will appear here when action is needed.</span></div>
+    }
+</section>
+
+<nav class="workflow-filters" aria-label="Application workflow filters">
+    @foreach (var filter in Filters)
+    {
+        <a class="@(string.Equals(Filter, filter.Key, StringComparison.OrdinalIgnoreCase) || string.IsNullOrWhiteSpace(Filter) && filter.Key == "all" ? "active" : null)" href="@($"/applications?filter={filter.Key}")">@filter.Label</a>
+    }
+</nav>
 
 <section class="application-list-section">
-    <div class="section-heading"><h2>Application queue</h2><span>@items.Count total</span></div>
-    @if (items.Count == 0) { <div class="empty-state"><strong>No application packages yet.</strong><span>Prepare one from a job detail page.</span></div> }
-    else { <div class="application-list">@foreach (var item in items) {
-        <a href="@($"/applications/{item.Id}")" class="application-row status-border-@item.Status.ToString().ToLowerInvariant()"><div><span class="application-status status-@item.Status.ToString().ToLowerInvariant()">@StatusLabel(item.Status)</span><strong>@item.JobTitle</strong><p>@item.Company</p></div><div><span>@item.Platform</span><span>@item.AutomationMode</span>@if (item.UnansweredQuestions > 0) { <strong>@item.UnansweredQuestions unanswered</strong> }</div></a>
-    }</div> }
+    <div class="section-heading"><h2>Application queue</h2><span>@filteredItems.Count shown · @items.Count total</span></div>
+    @if (filteredItems.Count == 0)
+    {
+        <div class="empty-state"><strong>@EmptyTitle</strong><span>@EmptyMessage</span></div>
+    }
+    else
+    {
+        <div class="application-list">
+            @foreach (var item in filteredItems)
+            {
+                var action = Guidance.Resolve(item.Status, item.UnansweredQuestions);
+                <a href="@($"/applications/{item.Id}")" class="application-row status-border-@item.Status.ToString().ToLowerInvariant()">
+                    <div class="application-row-main"><span class="application-status status-@item.Status.ToString().ToLowerInvariant()">@Guidance.StatusLabel(item.Status)</span><strong>@item.JobTitle</strong><p>@item.Company</p><span class="application-next-label">Next: @action.ButtonLabel</span></div>
+                    <div class="application-row-meta"><span>@item.MatchScore match</span><span>@ValueOrFallback(item.Source, item.Platform.ToString())</span><span>Updated @FormatActivity(item.UpdatedAtUtc ?? item.CreatedAtUtc)</span>@if (item.UnansweredQuestions > 0) { <strong>@item.UnansweredQuestions required</strong> }</div>
+                </a>
+            }
+        </div>
+    }
 </section>
 
 @code {
-    private static readonly ApplicationWorkflowStatus[] QueueStatuses = [ApplicationWorkflowStatus.NeedsInput, ApplicationWorkflowStatus.Approved, ApplicationWorkflowStatus.InProgress, ApplicationWorkflowStatus.ReadyToSubmit, ApplicationWorkflowStatus.Submitted, ApplicationWorkflowStatus.Failed];
+    [Parameter, SupplyParameterFromQuery(Name = "filter")] public string? Filter { get; set; }
+    private static readonly (string Key, string Label)[] Filters = [("all", "All"), ("attention", "Needs attention"), ("review", "Needs review"), ("input", "Needs input"), ("ready", "Ready to submit"), ("submitted", "Submitted")];
     private IReadOnlyList<ApplicationSummary> items = [];
-    protected override async Task OnInitializedAsync() => items = await Repository.ListAsync();
-    private static string StatusLabel(ApplicationWorkflowStatus value) => value switch { ApplicationWorkflowStatus.NeedsInput => "Needs Input", ApplicationWorkflowStatus.ReadyToSubmit => "Ready to Submit", _ => value.ToString() };
+    private IReadOnlyList<ApplicationSummary> filteredItems = [];
+    private ApplicationDashboard dashboard = new(0, 0, 0, 0, null);
+
+    protected override async Task OnParametersSetAsync()
+    {
+        items = await Repository.ListAsync();
+        dashboard = Guidance.Dashboard(items, DateTimeOffset.UtcNow);
+        filteredItems = items.Where(MatchesFilter).ToArray();
+    }
+
+    private bool MatchesFilter(ApplicationSummary value) => (Filter?.ToLowerInvariant() ?? "all") switch
+    {
+        "attention" => Guidance.Resolve(value.Status, value.UnansweredQuestions).RequiresAttention,
+        "review" => value.Status == ApplicationWorkflowStatus.Prepared,
+        "input" => value.Status == ApplicationWorkflowStatus.NeedsInput,
+        "ready" => value.Status == ApplicationWorkflowStatus.ReadyToSubmit,
+        "submitted" => value.Status == ApplicationWorkflowStatus.Submitted,
+        _ => true
+    };
+
+    private string EmptyTitle => (Filter?.ToLowerInvariant() ?? "all") switch
+    {
+        "input" => "No applications need your answers.",
+        "ready" => "No applications are ready to submit.",
+        "submitted" => "No applications have been submitted yet.",
+        "review" => "No applications are waiting for review.",
+        "attention" => "No applications need your attention.",
+        _ => "No application packages yet."
+    };
+    private string EmptyMessage => string.IsNullOrWhiteSpace(Filter) || Filter == "all" ? "Prepare one from a job detail page." : "Choose another workflow filter to see the rest of your applications.";
+    private static string ValueOrFallback(string value, string fallback) => string.IsNullOrWhiteSpace(value) ? fallback : value;
+    private static string FormatActivity(DateTimeOffset value) => value.ToLocalTime().ToString("MMM d, h:mm tt");
 }

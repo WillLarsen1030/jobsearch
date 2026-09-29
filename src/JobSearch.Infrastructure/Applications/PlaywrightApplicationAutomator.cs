@@ -27,7 +27,7 @@ public sealed class PlaywrightApplicationAutomator(
             page = session.Page;
             if (!page.Url.Equals(request.Url.ToString(), StringComparison.OrdinalIgnoreCase))
                 await page.GotoAsync(request.Url.ToString(), new PageGotoOptions { WaitUntil = WaitUntilState.DOMContentLoaded, Timeout = 45_000 });
-            var handler = handlers.FirstOrDefault(value => value.Platform == request.Platform && value.CanHandle(request.Url))
+            var handler = handlers.FirstOrDefault(value => value.Platform == request.Platform)
                 ?? handlers.First(value => value.Platform == ApplicationPlatform.Generic);
             logger.LogInformation("Starting headed application fill {RunId} with {Handler} for application {ApplicationId}", runId, handler.GetType().Name, request.ApplicationId);
             return await handler.FillAsync(new ApplicationAutomationContext(request.ApplicationId, request.Url, request.Mode,
@@ -50,6 +50,14 @@ public sealed class PlaywrightApplicationAutomator(
                 string.IsNullOrWhiteSpace(screenshotPath) ? [] : [$"Failure screenshot: {screenshotPath}"], exception.Message,
                 string.IsNullOrWhiteSpace(screenshotPath) ? null : screenshotPath);
         }
+    }
+
+    public async Task<bool> FocusExistingSessionAsync(Guid applicationId, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (!sessions.TryGetValue(applicationId, out var session) || session.Page.IsClosed) return false;
+        await session.Page.BringToFrontAsync();
+        return true;
     }
 
     private async Task<BrowserSession> GetOrCreateSessionAsync(Guid applicationId, CancellationToken cancellationToken)

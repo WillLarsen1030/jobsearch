@@ -41,7 +41,8 @@ public enum ApplicationEventType
     Submitted,
     Failed,
     Resumed,
-    Withdrawn
+    Withdrawn,
+    Warning
 }
 
 public enum AnswerType
@@ -103,7 +104,9 @@ public sealed record ApplicationSummary(
     AutomationMode AutomationMode,
     DateTimeOffset CreatedAtUtc,
     DateTimeOffset? UpdatedAtUtc,
-    int UnansweredQuestions);
+    int UnansweredQuestions,
+    int MatchScore = 0,
+    string Source = "");
 
 public sealed record ApplicationAnswer(
     Guid Id,

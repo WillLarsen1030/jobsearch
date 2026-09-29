@@ -77,6 +77,15 @@ public sealed class ApplicationService(
     public Task<JobApplication> SaveQuestionDraftAsync(Guid applicationId, Guid questionId, string draft, CancellationToken cancellationToken = default) =>
         applications.SaveQuestionDraftAsync(applicationId, questionId, draft, cancellationToken);
 
+    public async Task<bool> FocusBrowserAsync(Guid id, CancellationToken cancellationToken = default)
+    {
+        var application = await applications.GetAsync(id, cancellationToken)
+            ?? throw new KeyNotFoundException($"Application '{id}' was not found.");
+        if (application.Status != ApplicationWorkflowStatus.ReadyToSubmit)
+            throw new InvalidOperationException("The employer browser can only be opened for final review after filling is complete.");
+        return await automator.FocusExistingSessionAsync(id, cancellationToken);
+    }
+
     public async Task<JobApplication> DraftQuestionAsync(Guid applicationId, Guid questionId, CancellationToken cancellationToken = default)
     {
         var application = await applications.GetAsync(applicationId, cancellationToken)

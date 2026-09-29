@@ -40,4 +40,54 @@ public sealed class EfApplicationRepositoryTests
         Assert.Equal(11, application.Events.Count);
         Assert.Equal(saved.NormalizedPattern, question.NormalizedQuestion);
     }
+
+    [Fact]
+    public async Task AutomationResult_PersistsResumeOutcomeAndWarningsAsEvents()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var context = new JobSearchDbContext(new DbContextOptionsBuilder<JobSearchDbContext>().UseSqlite(connection).Options);
+        var jobs = new EfJobRepository(context, NullLogger<EfJobRepository>.Instance);
+        await jobs.InitializeAsync();
+        var posting = new JobPosting { Source = "Greenhouse", SourceJobId = "2", Title = "Engineer", Company = "Livefront", Url = new Uri("https://job-boards.greenhouse.io/livefront/jobs/2") };
+        await jobs.UpsertAsync(posting, new JobScore(90, []), null, DateTimeOffset.UtcNow);
+        var repository = new EfApplicationRepository(context);
+        var now = DateTimeOffset.UtcNow;
+        var application = await repository.CreateAsync(posting.Id, ApplicationPlatform.Greenhouse, posting.Url, "tailored.docx", AutomationMode.ReviewBeforeSubmit, now);
+        application = await repository.TransitionAsync(application.Id, ApplicationWorkflowStatus.Prepared, now, "prepared");
+        application = await repository.TransitionAsync(application.Id, ApplicationWorkflowStatus.Approved, now, "approved");
+        application = await repository.TransitionAsync(application.Id, ApplicationWorkflowStatus.InProgress, now, "started");
+
+        application = await repository.RecordAutomationResultAsync(application.Id,
+            new AutomationResult("run", ApplicationWorkflowStatus.ReadyToSubmit,
+                ["resume: tailored.docx"], [], [], ["Greenhouse submit controls were not activated."]), now);
+
+        Assert.Contains(application.Events, value => value.Type == ApplicationEventType.FieldFilled && value.Message.Contains("tailored.docx"));
+        Assert.Contains(application.Events, value => value.Type == ApplicationEventType.Warning && value.Message.Contains("not activated"));
+    }
+
+    [Fact]
+    public async Task SubmittedTransition_PersistsTimestampAndHistory()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var context = new JobSearchDbContext(new DbContextOptionsBuilder<JobSearchDbContext>().UseSqlite(connection).Options);
+        var jobs = new EfJobRepository(context, NullLogger<EfJobRepository>.Instance);
+        await jobs.InitializeAsync();
+        var posting = new JobPosting { Source = "Greenhouse", SourceJobId = "submitted", Title = "Engineer", Company = "Example", Url = new Uri("https://job-boards.greenhouse.io/example/jobs/submitted") };
+        await jobs.UpsertAsync(posting, new JobScore(85, []), null, DateTimeOffset.UtcNow);
+        var repository = new EfApplicationRepository(context);
+        var now = DateTimeOffset.UtcNow;
+        var application = await repository.CreateAsync(posting.Id, ApplicationPlatform.Greenhouse, posting.Url, "resume.docx", AutomationMode.ReviewBeforeSubmit, now);
+        application = await repository.TransitionAsync(application.Id, ApplicationWorkflowStatus.Prepared, now, "prepared");
+        application = await repository.TransitionAsync(application.Id, ApplicationWorkflowStatus.Approved, now, "approved");
+        application = await repository.TransitionAsync(application.Id, ApplicationWorkflowStatus.InProgress, now, "started");
+        application = await repository.RecordAutomationResultAsync(application.Id, new AutomationResult("run", ApplicationWorkflowStatus.ReadyToSubmit, [], [], [], []), now);
+
+        application = await repository.TransitionAsync(application.Id, ApplicationWorkflowStatus.Submitted, now.AddMinutes(1), "Manually submitted by the user.");
+
+        Assert.Equal(now.AddMinutes(1), application.SubmittedAtUtc);
+        Assert.Equal(now.AddMinutes(1), application.CompletedAtUtc);
+        Assert.Contains(application.Events, value => value.Type == ApplicationEventType.Submitted && value.Message.Contains("Manually submitted"));
+    }
 }

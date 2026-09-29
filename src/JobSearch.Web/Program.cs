@@ -43,6 +43,7 @@ builder.Services.AddSingleton<IJobScorer, DefaultJobScorer>();
 builder.Services.AddSingleton<IJobDeduplicator, DefaultJobDeduplicator>();
 builder.Services.AddSingleton<JobReviewQueryService>();
 builder.Services.AddSingleton<DashboardSummaryService>();
+builder.Services.AddSingleton<ApplicationGuidanceService>();
 var profilePath = DatabasePathResolver.Resolve(settings.ApplicantProfile.Path, builder.Environment.ContentRootPath);
 var artifactPath = DatabasePathResolver.Resolve(settings.ApplicationAutomation.ArtifactDirectory, builder.Environment.ContentRootPath);
 builder.Services.AddSingleton<IApplicantProfileStore>(new LocalApplicantProfileStore(profilePath));
